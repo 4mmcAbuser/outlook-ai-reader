@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>AI Voice Master</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 15px; background: #1e1e1e; color: white; }
+        h3 { margin-top: 0; color: #0a84ff; font-size: 18px; }
+        
+        .settings-box { background: #2c2c2e; padding: 10px; border-radius: 8px; margin-bottom: 15px; }
+        input { width: 100%; padding: 8px; margin-top: 5px; background: #1c1c1e; border: 1px solid #3a3a3c; color: white; border-radius: 4px; box-sizing: border-box;}
+        
+        button { background: #32d74b; color: #000; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; font-size: 14px; margin-top: 10px;}
+        button:hover { background: #28b83e; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        
+        #status { margin-top: 15px; font-size: 13px; color: #ffcc00; font-weight: bold; text-align: center; }
+        #result { margin-top: 10px; background: #000; padding: 10px; border-radius: 5px; font-size: 12px; color: #32d74b; white-space: pre-wrap; word-wrap: break-word; display: none;}
+    </style>
+</head>
+<body>
+    <h3>Voice AI Master</h3>
+
+    <div class="settings-box">
+        <label style="font-size: 12px; color: #8e8e93;">Gemini API Key (Αποθηκεύεται τοπικά)</label>
+        <input type="password" id="apiKeyInput" placeholder="Επικόλληση κλειδιού εδώ...">
+        <button id="saveKeyBtn" style="background: #0a84ff; color: white; padding: 6px;">Αποθήκευση Κλειδιού</button>
+    </div>
+
+    <button id="actionBtn" disabled>🎤 Κράτα πατημένο για Υπαγόρευση</button>
+    
+    <div id="status">Περιμένω το API Key...</div>
+    <pre id="result"></pre>
+
+    <script src="app.js"></script>
+</body>
+</html>
