@@ -124,7 +124,7 @@ function extractEmailAndProcess(base64Audio, mimeType) {
 
 // 3. Η ΜΑΓΕΙΑ: Στέλνουμε Ήχο και Κείμενο μαζί στο Gemini 1.5 Flash
 async function callGeminiAudioAPI(emailText, base64Audio, mimeType) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
     
     const prompt = `Είσαι Executive Assistant. 
 Email Πελάτη: "${emailText}"
