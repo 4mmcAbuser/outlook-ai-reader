@@ -28,13 +28,9 @@ function initApp() {
         }
     };
 
-    // ΝΕΟ: Τι γίνεται όταν πατάς "Επικόλληση στο Outlook"
     document.getElementById("insertReplyBtn").onclick = () => {
         const finalEmailText = document.getElementById("draftText").value;
-        
-        // Η ΕΝΤΟΛΗ ΤΗΣ MICROSOFT ΠΟΥ ΑΝΟΙΓΕΙ ΤΗΝ ΑΠΑΝΤΗΣΗ!
         Office.context.mailbox.item.displayReplyForm(finalEmailText);
-        
         document.getElementById("status").innerText = "✅ Η απάντηση άνοιξε στο Outlook!";
         document.getElementById("status").style.color = "#32d74b";
     };
@@ -75,7 +71,7 @@ function startRecording() {
         };
 
         mediaRecorder.onstop = () => {
-            document.getElementById("status").innerText = "Ηχογράφηση ολοκληρώθηκε. Διαβάζω Ιστορικό...";
+            document.getElementById("status").innerText = "Ηχογράφηση ολοκληρώθηκε. Συλλέγω δεδομένα συνομιλίας...";
             const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
             const reader = new FileReader();
             reader.readAsDataURL(audioBlob);
@@ -89,12 +85,14 @@ function startRecording() {
         mediaRecorder.start();
         isRecording = true;
         
-        const actionBtn = document.getElementById("actionBtn");
-        actionBtn.innerText = "🛑 Πάτα για Τερματισμό";
-        actionBtn.style.background = "#ff453a";
+        document.getElementById("actionBtn").innerText = "🛑 Πάτα για Τερματισμό";
+        document.getElementById("actionBtn").style.background = "#ff453a";
         document.getElementById("status").innerText = "🔴 Ηχογράφηση... Μίλα τώρα!";
         document.getElementById("status").style.color = "#ff453a";
-        document.getElementById("result").style.display = "none";
+        
+        // Κρύβουμε τα παλιά αποτελέσματα
+        document.getElementById("voiceInputContainer").style.display = "none";
+        document.getElementById("formContainer").style.display = "none";
         document.getElementById("draftContainer").style.display = "none";
 
     }).catch(err => {
@@ -107,46 +105,71 @@ function stopRecording() {
         mediaRecorder.stop();
     }
     isRecording = false;
-    const actionBtn = document.getElementById("actionBtn");
-    actionBtn.innerText = "🎤 Πάτα για Ηχογράφηση";
-    actionBtn.style.background = "#32d74b";
+    document.getElementById("actionBtn").innerText = "🎤 Πάτα για Ηχογράφηση";
+    document.getElementById("actionBtn").style.background = "#32d74b";
 }
 
 function extractEmailAndProcess(base64Audio, mimeType) {
-    // Το getAsync τραβάει ΟΛΟ το ιστορικό που φαίνεται στο email
-    Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, function (asyncResult) {
+    const item = Office.context.mailbox.item;
+    
+    // ΝΕΟ: Μαζεύουμε τα στοιχεία "Ποιος μιλάει και σε ποιον"
+    const emailMetadata = {
+        senderName: item.sender ? item.sender.displayName : "Άγνωστος",
+        senderEmail: item.sender ? item.sender.emailAddress : "unknown@mail.com",
+        subject: item.subject,
+        toRecipients: item.to ? item.to.map(r => `${r.displayName} (${r.emailAddress})`).join(", ") : "Μόνο εγώ"
+    };
+
+    // Διαβάζουμε όλο το ιστορικό της συνομιλίας (body)
+    item.body.getAsync(Office.CoercionType.Text, function (asyncResult) {
         if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
             const emailBody = asyncResult.value;
-            document.getElementById("status").innerText = "Στέλνω δεδομένα στο AI...";
+            document.getElementById("status").innerText = "Αναλύω τη συνομιλία με το Gemini 2.5...";
             document.getElementById("status").style.color = "#0a84ff";
-            callGeminiAudioAPI(emailBody, base64Audio, mimeType);
+            
+            callGeminiAudioAPI(emailBody, emailMetadata, base64Audio, mimeType);
         } else {
-            document.getElementById("status").innerText = "Σφάλμα ανάγνωσης email.";
+            document.getElementById("status").innerText = "Σφάλμα ανάγνωσης συνομιλίας.";
         }
     });
 }
 
-async function callGeminiAudioAPI(emailText, base64Audio, mimeType) {
+async function callGeminiAudioAPI(emailText, meta, base64Audio, mimeType) {
+    // Χρήση του gemini-2.5-flash-lite που πρότεινες!
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
     
-    const prompt = `Είσαι Executive Assistant. 
-Ιστορικό Συνομιλίας Πελάτη: "${emailText}"
+    const prompt = `Είσαι ο κορυφαίος Executive Assistant της εταιρείας.
+Ανάλυσε την παρακάτω συνομιλία και τα στοιχεία της για να καταλάβεις ΠΟΙΟΣ μιλάει, σε ΠΟΙΟΝ και ΓΙΑΤΙ (ποιο είναι το θέμα/πρόθεση).
 
-Άκουσε την ηχητική εντολή του αφεντικού.
-Εξήγαγε JSON με: "summary" (σύνοψη), "email_reply" (επίσημη απάντηση στο email του πελάτη), και "order_data" (αν ζητήθηκε φόρμα/εντολή).
-Απάντησε ΑΥΣΤΗΡΑ σε μορφή JSON, χωρίς μορφοποίηση markdown στην αρχή (π.χ. χωρίς \`\`\`json).`;
+--- ΣΤΟΙΧΕΙΑ ΜΗΝΥΜΑΤΟΣ ---
+Αποστολέας (Αυτός που μας έστειλε το mail): ${meta.senderName} (${meta.senderEmail})
+Θέμα Συζήτησης: ${meta.subject}
+Παραλήπτες: ${meta.toRecipients}
+
+--- ΟΛΟΚΛΗΡΟ ΤΟ ΙΣΤΟΡΙΚΟ ΤΗΣ ΣΥΝΟΜΙΛΙΑΣ (THREAD) ---
+"${emailText}"
+
+--- ΟΔΗΓΙΕΣ ΦΩΝΗΣ ---
+Άκουσε το αρχείο ήχου. Περιέχει τη φωνητική εντολή του αφεντικού για το τι πρέπει να απαντήσουμε ή τι ενέργεια να κάνουμε.
+
+Επίστρεψε ΑΥΣΤΗΡΑ ένα JSON αντικείμενο με την εξής δομή (χωρίς markdown):
+{
+  "voice_transcription": "Γράψε εδώ ΑΚΡΙΒΩΣ τι κατάλαβες ότι είπε το αφεντικό στον ήχο στα Ελληνικά",
+  "summary": "Μια σύντομη σύνοψη της κατάστασης (Ποιος, γιατί και τι ζήτησε το αφεντικό)",
+  "email_reply": "Η επίσημη, επαγγελματική απάντηση προς τον ${meta.senderName} λαμβάνοντας υπόψη όλο το ιστορικό συνομιλίας",
+  "order_data": {
+     "customer_name": "${meta.senderName}",
+     "intent_why": "Ο λόγος της συνομιλίας με 3 λέξεις",
+     "any_extra_form_data": "Οποιοδήποτε άλλο στοιχείο (ποσό, ημερομηνία) αναφέρθηκε στον ήχο"
+  }
+}`;
 
     const requestBody = {
         "contents": [
             { 
                 "parts": [
                     { "text": prompt },
-                    {
-                        "inlineData": {
-                            "mimeType": mimeType,
-                            "data": base64Audio
-                        }
-                    }
+                    { "inlineData": { "mimeType": mimeType, "data": base64Audio } }
                 ] 
             }
         ],
@@ -164,19 +187,21 @@ async function callGeminiAudioAPI(emailText, base64Audio, mimeType) {
         if (data.error) throw new Error(data.error.message);
 
         const aiResultText = data.candidates[0].content.parts[0].text;
-        
-        // Μετατρέπουμε το Κείμενο σε πραγματικό JSON (Dictionary)
         const parsedData = JSON.parse(aiResultText);
         
-        // Βάζουμε τη Σύνοψη και τη Φόρμα στο μαύρο κουτί (Για το δικό σου σύστημα)
-        document.getElementById("result").innerText = "Σύνοψη: " + parsedData.summary + "\n\nΔεδομένα Φόρμας: \n" + JSON.stringify(parsedData.order_data, null, 2);
-        document.getElementById("result").style.display = "block";
+        // 1. Εμφανίζουμε το Φωνητικό Input στο GUI
+        document.getElementById("voiceInputText").innerText = parsedData.voice_transcription;
+        document.getElementById("voiceInputContainer").style.display = "block";
 
-        // Βάζουμε την Απάντηση στο νέο Textarea για να τη δει/διορθώσει ο χρήστης
+        // 2. Εμφανίζουμε τα Δεδομένα της Φόρμας (για το ERP σας)
+        document.getElementById("result").innerText = "Σύνοψη: " + parsedData.summary + "\n\nΔεδομένα Φόρμας: \n" + JSON.stringify(parsedData.order_data, null, 2);
+        document.getElementById("formContainer").style.display = "block";
+
+        // 3. Βάζουμε την Απάντηση στο Textarea
         document.getElementById("draftText").value = parsedData.email_reply;
         document.getElementById("draftContainer").style.display = "block";
 
-        document.getElementById("status").innerText = "✨ Το AI ολοκλήρωσε!";
+        document.getElementById("status").innerText = "✨ Ανάλυση Ολοκληρώθηκε!";
         document.getElementById("status").style.color = "#32d74b";
 
     } catch (error) {
