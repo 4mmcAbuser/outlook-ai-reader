@@ -6,69 +6,171 @@ Office.onReady((info) => {
 });
 
 let apiKey = "";
+let mediaStream = null;         // για να κλείνουμε το stream μετά
+let recognition = null;
+let isListening = false;
+let pressTimer = null;
 
 function initApp() {
-    // 1. Έλεγχος αν υπάρχει ήδη αποθηκευμένο API Key
+    // 1. Φόρτωση αποθηκευμένου API Key
     apiKey = localStorage.getItem("geminiApiKey");
     if (apiKey) {
         document.getElementById("apiKeyInput").value = apiKey;
-        document.getElementById("actionBtn").disabled = false;
+        enableMicrophoneButton(true);
         document.getElementById("status").innerText = "Έτοιμο για χρήση!";
     }
 
-    // 2. Αποθήκευση του API Key
+    // 2. Αποθήκευση κλειδιού
     document.getElementById("saveKeyBtn").onclick = () => {
         let key = document.getElementById("apiKeyInput").value.trim();
         if (key) {
             localStorage.setItem("geminiApiKey", key);
             apiKey = key;
-            document.getElementById("actionBtn").disabled = false;
-            document.getElementById("status").innerText = "Το κλειδί αποθηκεύτηκε!";
-            document.getElementById("status").style.color = "#32d74b";
+            enableMicrophoneButton(true);
+            document.getElementById("status").innerHTML = "✅ Το κλειδί αποθηκεύτηκε!";
         }
     };
 
-    // 3. Λειτουργία Υπαγόρευσης (STT) + Επεξεργασία
-    const actionBtn = document.getElementById("actionBtn");
-    let recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'el-GR'; // Ελληνική Αναγνώριση
-    recognition.interimResults = false;
+    // 3. Έλεγχος υποστήριξης SpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        document.getElementById("status").innerHTML = "❌ Το πρόγραμμα περιήγησης του Outlook δεν υποστηρίζει υπαγόρευση. Χρησιμοποιήστε πληκτρολόγηση.";
+        enableMicrophoneButton(false);
+        return;
+    }
 
-    // Όταν ο χρήστης πατήσει το κουμπί
-    actionBtn.onclick = () => {
-        document.getElementById("status").innerText = "Ακούω... Μίλα τώρα!";
+    recognition = new SpeechRecognition();
+    recognition.lang = 'el-GR';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    // 4. Λειτουργία "Κράτα πατημένο"
+    const actionBtn = document.getElementById("actionBtn");
+    
+    actionBtn.addEventListener("mousedown", () => {
+        if (actionBtn.disabled) return;
+        // Ξεκινάμε υπαγόρευση μετά από 100ms (αποφυγή false trigger)
+        pressTimer = setTimeout(() => {
+            startVoiceRecording();
+        }, 100);
+    });
+    
+    actionBtn.addEventListener("mouseup", () => {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+        // Δεν κάνουμε stop – θα σταματήσει μόνο του όταν τελειώσει η ομιλία
+        // ή αν θέλετε να διακόπτετε απότομα, μπορείτε να καλέσετε recognition.stop()
+    });
+    
+    actionBtn.addEventListener("mouseleave", () => {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+        if (isListening) {
+            recognition.stop();
+        }
+    });
+
+    recognition.onstart = () => {
+        isListening = true;
+        document.getElementById("status").innerHTML = "🎤 Ακούω... Μίλα τώρα!";
         document.getElementById("status").style.color = "#ff453a";
         document.getElementById("result").style.display = "none";
-        recognition.start();
     };
-
-    // Όταν τελειώσει η ομιλία
+    
+    recognition.onend = () => {
+        isListening = false;
+        // Κλείνουμε το stream μικροφώνου για να ελευθερωθεί η συσκευή
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            mediaStream = null;
+        }
+        document.getElementById("status").innerHTML = "✅ Έτοιμο (πατήστε παρατεταμένα)";
+        document.getElementById("status").style.color = "#32d74b";
+    };
+    
     recognition.onresult = (event) => {
         const voiceCommand = event.results[0][0].transcript;
-        document.getElementById("status").innerText = `Είπες: "${voiceCommand}"\nΔιαβάζω το email...`;
+        document.getElementById("status").innerHTML = `📝 Είπες: "${voiceCommand}"<br>🔄 Διαβάζω το email...`;
         document.getElementById("status").style.color = "#0a84ff";
-        
-        // Διαβάζουμε το Email
         extractEmailAndProcess(voiceCommand);
     };
-
+    
     recognition.onerror = (event) => {
-        document.getElementById("status").innerText = "Σφάλμα μικροφώνου: " + event.error;
+        console.error("SpeechRecognition error:", event.error);
+        let errorMsg = "";
+        switch(event.error) {
+            case 'not-allowed':
+                errorMsg = "Δεν δώσατε άδεια μικροφώνου. Παρακαλώ επιτρέψτε την πρόσβαση και δοκιμάστε ξανά.";
+                break;
+            case 'no-speech':
+                errorMsg = "Δεν ανιχνεύθηκε ομιλία. Προσπαθήστε ξανά.";
+                break;
+            default:
+                errorMsg = "Σφάλμα μικροφώνου: " + event.error;
+        }
+        document.getElementById("status").innerHTML = "❌ " + errorMsg;
         document.getElementById("status").style.color = "#ff453a";
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            mediaStream = null;
+        }
+        isListening = false;
     };
 }
 
+// Συνάρτηση που ζητάει άδεια μικροφώνου και μετά ξεκινά το recognition
+async function startVoiceRecording() {
+    if (!recognition) {
+        document.getElementById("status").innerHTML = "❌ Η υπαγόρευση δεν υποστηρίζεται.";
+        return;
+    }
+    if (isListening) return;
+    
+    // Ζητάμε δικαίωμα μικροφώνου (απαραίτητο στο add‑in WebView)
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStream = stream; // κρατάμε για να κλείσουμε μετά
+        recognition.start();
+    } catch (err) {
+        console.error("getUserMedia error:", err);
+        let msg = "Δεν μπόρεσα να αποκτήσω πρόσβαση στο μικρόφωνο.";
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            msg = "Η πρόσβαση στο μικρόφωνο απορρίφθηκε. Ελέγξτε τις ρυθμίσεις ασφαλείας του Outlook.";
+        }
+        document.getElementById("status").innerHTML = "❌ " + msg;
+        document.getElementById("status").style.color = "#ff453a";
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            mediaStream = null;
+        }
+    }
+}
+
+function enableMicrophoneButton(enabled) {
+    const btn = document.getElementById("actionBtn");
+    btn.disabled = !enabled;
+    if (!enabled) {
+        btn.style.opacity = "0.5";
+    } else {
+        btn.style.opacity = "1";
+    }
+}
+
+// Οι υπόλοιπες συναρτήσεις extractEmailAndProcess και callGeminiAPI παραμένουν IDENTICAL με πριν
+// (δεν τις αλλάζουμε, αλλά επισυνάπτονται για πληρότητα)
+
 function extractEmailAndProcess(voiceCommand) {
-    // Παίρνουμε το κείμενο του Email από το Outlook
     Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, function (asyncResult) {
         if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
             const emailBody = asyncResult.value;
-            document.getElementById("status").innerText = "Στέλνω δεδομένα στο Gemini AI...";
-            
-            // Κλήση στο Gemini AI
+            document.getElementById("status").innerHTML = "🤖 Στέλνω δεδομένα στο Gemini AI...";
             callGeminiAPI(emailBody, voiceCommand);
         } else {
-            document.getElementById("status").innerText = "Σφάλμα ανάγνωσης email.";
+            document.getElementById("status").innerHTML = "❌ Σφάλμα ανάγνωσης email.";
         }
     });
 }
@@ -103,14 +205,13 @@ Email Πελάτη: "${emailText}"
 
         const aiResultText = data.candidates[0].content.parts[0].text;
         
-        // Εμφάνιση του αποτελέσματος στην οθόνη
-        document.getElementById("status").innerText = "Επιτυχία!";
+        document.getElementById("status").innerHTML = "✅ Επιτυχία!";
         document.getElementById("status").style.color = "#32d74b";
         document.getElementById("result").style.display = "block";
         document.getElementById("result").innerText = aiResultText;
 
     } catch (error) {
-        document.getElementById("status").innerText = "Σφάλμα AI: " + error.message;
+        document.getElementById("status").innerHTML = "❌ Σφάλμα AI: " + error.message;
         document.getElementById("status").style.color = "#ff453a";
     }
 }
