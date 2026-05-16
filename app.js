@@ -127,7 +127,7 @@ function extractEmailAndProcess(base64Audio, mimeType) {
 }
 
 async function callGeminiAudioAPI(emailText, base64Audio, mimeType) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
     
     const prompt = `Είσαι Executive Assistant. 
 Ιστορικό Συνομιλίας Πελάτη: "${emailText}"
