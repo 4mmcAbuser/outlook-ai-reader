@@ -28,25 +28,34 @@ function initApp() {
         }
     };
 
+    // ΝΕΟ: Τι γίνεται όταν πατάς "Επικόλληση στο Outlook"
+    document.getElementById("insertReplyBtn").onclick = () => {
+        const finalEmailText = document.getElementById("draftText").value;
+        
+        // Η ΕΝΤΟΛΗ ΤΗΣ MICROSOFT ΠΟΥ ΑΝΟΙΓΕΙ ΤΗΝ ΑΠΑΝΤΗΣΗ!
+        Office.context.mailbox.item.displayReplyForm(finalEmailText);
+        
+        document.getElementById("status").innerText = "✅ Η απάντηση άνοιξε στο Outlook!";
+        document.getElementById("status").style.color = "#32d74b";
+    };
+
     const actionBtn = document.getElementById("actionBtn");
 
     actionBtn.onclick = () => {
         if (isRecording) {
-            // Αν γράφει ήδη, το σταματάμε
             stopRecording();
             return;
         }
 
-        // Ζητάμε άδεια μικροφώνου (η γνωστή γραφειοκρατία του Outlook)
         if (Office.context.mailbox && Office.devicePermission) {
             Office.devicePermission.requestPermissionsAsync([Office.DevicePermissionType.microphone], (asyncResult) => {
                 if (asyncResult.status === Office.AsyncResultStatus.Failed) {
                     document.getElementById("status").innerText = "Αρνηθήκατε την πρόσβαση.";
                 } else {
                     if (asyncResult.value) {
-                        location.reload(); // Πρώτη φορά -> Reload
+                        location.reload(); 
                     } else {
-                        startRecording(); // Έχει ήδη άδεια -> Πάμε!
+                        startRecording(); 
                     }
                 }
             });
@@ -56,7 +65,6 @@ function initApp() {
     };
 }
 
-// 1. ΗΧΟΓΡΑΦΗΣΗ ΦΩΝΗΣ (Αντί για STT)
 function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         mediaRecorder = new MediaRecorder(stream);
@@ -67,12 +75,8 @@ function startRecording() {
         };
 
         mediaRecorder.onstop = () => {
-            document.getElementById("status").innerText = "Ηχογράφηση ολοκληρώθηκε. Διαβάζω Email...";
-            
-            // Πακετάρουμε τον ήχο
+            document.getElementById("status").innerText = "Ηχογράφηση ολοκληρώθηκε. Διαβάζω Ιστορικό...";
             const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-            
-            // Μετατροπή σε Base64 για να πάει στο API
             const reader = new FileReader();
             reader.readAsDataURL(audioBlob);
             reader.onloadend = () => {
@@ -85,16 +89,16 @@ function startRecording() {
         mediaRecorder.start();
         isRecording = true;
         
-        // Αλλάζουμε το UI
         const actionBtn = document.getElementById("actionBtn");
         actionBtn.innerText = "🛑 Πάτα για Τερματισμό";
         actionBtn.style.background = "#ff453a";
         document.getElementById("status").innerText = "🔴 Ηχογράφηση... Μίλα τώρα!";
         document.getElementById("status").style.color = "#ff453a";
         document.getElementById("result").style.display = "none";
+        document.getElementById("draftContainer").style.display = "none";
 
     }).catch(err => {
-        document.getElementById("status").innerText = "Σφάλμα μικροφώνου: Δεν βρέθηκε συσκευή.";
+        document.getElementById("status").innerText = "Σφάλμα μικροφώνου.";
     });
 }
 
@@ -108,12 +112,12 @@ function stopRecording() {
     actionBtn.style.background = "#32d74b";
 }
 
-// 2. ΔΙΑΒΑΣΜΑ EMAIL
 function extractEmailAndProcess(base64Audio, mimeType) {
+    // Το getAsync τραβάει ΟΛΟ το ιστορικό που φαίνεται στο email
     Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, function (asyncResult) {
         if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
             const emailBody = asyncResult.value;
-            document.getElementById("status").innerText = "Στέλνω Ήχο και Email στο AI...";
+            document.getElementById("status").innerText = "Στέλνω δεδομένα στο AI...";
             document.getElementById("status").style.color = "#0a84ff";
             callGeminiAudioAPI(emailBody, base64Audio, mimeType);
         } else {
@@ -122,16 +126,15 @@ function extractEmailAndProcess(base64Audio, mimeType) {
     });
 }
 
-// 3. Η ΜΑΓΕΙΑ: Στέλνουμε Ήχο και Κείμενο μαζί στο Gemini 1.5 Flash
 async function callGeminiAudioAPI(emailText, base64Audio, mimeType) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
     
     const prompt = `Είσαι Executive Assistant. 
-Email Πελάτη: "${emailText}"
+Ιστορικό Συνομιλίας Πελάτη: "${emailText}"
 
-Άκουσε την ηχητική εντολή του αφεντικού από το επισυναπτόμενο αρχείο ήχου. Μπορεί να είναι στα Ελληνικά, Αγγλικά ή Greeklish.
-Εξήγαγε JSON με: "summary" (σύνοψη), "email_reply" (επίσημη απάντηση), και "order_data" (δεδομένα φόρμας πχ όνομα, ποσό).
-Απάντησε ΑΥΣΤΗΡΑ ΚΑΙ ΜΟΝΟ σε μορφή JSON.`;
+Άκουσε την ηχητική εντολή του αφεντικού.
+Εξήγαγε JSON με: "summary" (σύνοψη), "email_reply" (επίσημη απάντηση στο email του πελάτη), και "order_data" (αν ζητήθηκε φόρμα/εντολή).
+Απάντησε ΑΥΣΤΗΡΑ σε μορφή JSON, χωρίς μορφοποίηση markdown στην αρχή (π.χ. χωρίς \`\`\`json).`;
 
     const requestBody = {
         "contents": [
@@ -162,10 +165,19 @@ Email Πελάτη: "${emailText}"
 
         const aiResultText = data.candidates[0].content.parts[0].text;
         
-        document.getElementById("status").innerText = "Επιτυχία!";
-        document.getElementById("status").style.color = "#32d74b";
+        // Μετατρέπουμε το Κείμενο σε πραγματικό JSON (Dictionary)
+        const parsedData = JSON.parse(aiResultText);
+        
+        // Βάζουμε τη Σύνοψη και τη Φόρμα στο μαύρο κουτί (Για το δικό σου σύστημα)
+        document.getElementById("result").innerText = "Σύνοψη: " + parsedData.summary + "\n\nΔεδομένα Φόρμας: \n" + JSON.stringify(parsedData.order_data, null, 2);
         document.getElementById("result").style.display = "block";
-        document.getElementById("result").innerText = aiResultText;
+
+        // Βάζουμε την Απάντηση στο νέο Textarea για να τη δει/διορθώσει ο χρήστης
+        document.getElementById("draftText").value = parsedData.email_reply;
+        document.getElementById("draftContainer").style.display = "block";
+
+        document.getElementById("status").innerText = "✨ Το AI ολοκλήρωσε!";
+        document.getElementById("status").style.color = "#32d74b";
 
     } catch (error) {
         document.getElementById("status").innerText = "Σφάλμα AI: " + error.message;
