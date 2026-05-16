@@ -1,217 +1,445 @@
-// Περιμένουμε να φορτώσει το Outlook
+// ==============================
+// AI Voice Master - Outlook Add-in
+// Full app.js
+// ==============================
+
+// Περιμένουμε να φορτώσει το Office
 Office.onReady((info) => {
+
     if (info.host === Office.HostType.Outlook) {
         initApp();
     }
+
 });
 
+// ==============================
+// GLOBALS
+// ==============================
+
 let apiKey = "";
-let mediaStream = null;         // για να κλείνουμε το stream μετά
+
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+const actionBtn = document.getElementById("actionBtn");
+const saveKeyBtn = document.getElementById("saveKeyBtn");
+const apiKeyInput = document.getElementById("apiKeyInput");
+
+// Speech Recognition
 let recognition = null;
-let isListening = false;
-let pressTimer = null;
+
+// ==============================
+// INIT
+// ==============================
 
 function initApp() {
-    // 1. Φόρτωση αποθηκευμένου API Key
-    apiKey = localStorage.getItem("geminiApiKey");
-    if (apiKey) {
-        document.getElementById("apiKeyInput").value = apiKey;
-        enableMicrophoneButton(true);
-        document.getElementById("status").innerText = "Έτοιμο για χρήση!";
+
+    setStatus("Φόρτωση εφαρμογής...", "#0a84ff");
+
+    // Load API key
+    const savedKey = localStorage.getItem("geminiApiKey");
+
+    if (savedKey) {
+
+        apiKey = savedKey;
+        apiKeyInput.value = savedKey;
+
+        actionBtn.disabled = false;
+
+        setStatus("Έτοιμο για χρήση!", "#32d74b");
+
+    } else {
+
+        actionBtn.disabled = true;
+
+        setStatus("Πρόσθεσε Gemini API Key", "#ffcc00");
     }
 
-    // 2. Αποθήκευση κλειδιού
-    document.getElementById("saveKeyBtn").onclick = () => {
-        let key = document.getElementById("apiKeyInput").value.trim();
-        if (key) {
-            localStorage.setItem("geminiApiKey", key);
-            apiKey = key;
-            enableMicrophoneButton(true);
-            document.getElementById("status").innerHTML = "✅ Το κλειδί αποθηκεύτηκε!";
-        }
-    };
+    // Save API key
+    saveKeyBtn.onclick = saveApiKey;
 
-    // 3. Έλεγχος υποστήριξης SpeechRecognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        document.getElementById("status").innerHTML = "❌ Το πρόγραμμα περιήγησης του Outlook δεν υποστηρίζει υπαγόρευση. Χρησιμοποιήστε πληκτρολόγηση.";
-        enableMicrophoneButton(false);
+    // Init speech
+    initSpeechRecognition();
+}
+
+// ==============================
+// SAVE API KEY
+// ==============================
+
+function saveApiKey() {
+
+    const key = apiKeyInput.value.trim();
+
+    if (!key) {
+
+        setStatus("Βάλε έγκυρο API Key", "#ff453a");
         return;
     }
 
-    recognition = new SpeechRecognition();
-    recognition.lang = 'el-GR';
-    recognition.interimResults = false;
-    recognition.continuous = false;
+    localStorage.setItem("geminiApiKey", key);
 
-    // 4. Λειτουργία "Κράτα πατημένο"
-    const actionBtn = document.getElementById("actionBtn");
-    
-    actionBtn.addEventListener("mousedown", () => {
-        if (actionBtn.disabled) return;
-        // Ξεκινάμε υπαγόρευση μετά από 100ms (αποφυγή false trigger)
-        pressTimer = setTimeout(() => {
-            startVoiceRecording();
-        }, 100);
-    });
-    
-    actionBtn.addEventListener("mouseup", () => {
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
+    apiKey = key;
+
+    actionBtn.disabled = false;
+
+    setStatus("Το API Key αποθηκεύτηκε!", "#32d74b");
+}
+
+// ==============================
+// SPEECH RECOGNITION
+// ==============================
+
+function initSpeechRecognition() {
+
+    const SpeechRecognitionAPI =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+
+        setStatus(
+            "Το Outlook/WebView δεν υποστηρίζει Speech Recognition.",
+            "#ff453a"
+        );
+
+        actionBtn.disabled = true;
+
+        return;
+    }
+
+    recognition = new SpeechRecognitionAPI();
+
+    recognition.lang = "el-GR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    // ==============================
+    // BUTTON CLICK
+    // ==============================
+
+    actionBtn.onclick = async () => {
+
+        if (!apiKey) {
+
+            setStatus("Δεν υπάρχει API Key", "#ff453a");
+            return;
         }
-        // Δεν κάνουμε stop – θα σταματήσει μόνο του όταν τελειώσει η ομιλία
-        // ή αν θέλετε να διακόπτετε απότομα, μπορείτε να καλέσετε recognition.stop()
-    });
-    
-    actionBtn.addEventListener("mouseleave", () => {
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
+
+        try {
+
+            // Ζήτα permission μικροφώνου
+            await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
+
+            resultEl.style.display = "none";
+
+            setStatus("Ακούω... Μίλα τώρα!", "#ff453a");
+
+            recognition.start();
+
+        } catch (err) {
+
+            console.error(err);
+
+            setStatus(
+                "Δεν επιτράπηκε η πρόσβαση στο μικρόφωνο.",
+                "#ff453a"
+            );
         }
-        if (isListening) {
-            recognition.stop();
-        }
-    });
+    };
+
+    // ==============================
+    // START
+    // ==============================
 
     recognition.onstart = () => {
-        isListening = true;
-        document.getElementById("status").innerHTML = "🎤 Ακούω... Μίλα τώρα!";
-        document.getElementById("status").style.color = "#ff453a";
-        document.getElementById("result").style.display = "none";
+
+        console.log("Speech recognition started");
     };
-    
-    recognition.onend = () => {
-        isListening = false;
-        // Κλείνουμε το stream μικροφώνου για να ελευθερωθεί η συσκευή
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
-            mediaStream = null;
-        }
-        document.getElementById("status").innerHTML = "✅ Έτοιμο (πατήστε παρατεταμένα)";
-        document.getElementById("status").style.color = "#32d74b";
-    };
-    
+
+    // ==============================
+    // RESULT
+    // ==============================
+
     recognition.onresult = (event) => {
-        const voiceCommand = event.results[0][0].transcript;
-        document.getElementById("status").innerHTML = `📝 Είπες: "${voiceCommand}"<br>🔄 Διαβάζω το email...`;
-        document.getElementById("status").style.color = "#0a84ff";
-        extractEmailAndProcess(voiceCommand);
+
+        try {
+
+            const transcript =
+                event.results[0][0].transcript;
+
+            console.log("Voice Command:", transcript);
+
+            setStatus(
+                `Είπες: "${transcript}"`,
+                "#0a84ff"
+            );
+
+            extractEmailAndProcess(transcript);
+
+        } catch (err) {
+
+            console.error(err);
+
+            setStatus(
+                "Σφάλμα αναγνώρισης φωνής.",
+                "#ff453a"
+            );
+        }
     };
-    
+
+    // ==============================
+    // ERROR
+    // ==============================
+
     recognition.onerror = (event) => {
-        console.error("SpeechRecognition error:", event.error);
-        let errorMsg = "";
-        switch(event.error) {
-            case 'not-allowed':
-                errorMsg = "Δεν δώσατε άδεια μικροφώνου. Παρακαλώ επιτρέψτε την πρόσβαση και δοκιμάστε ξανά.";
+
+        console.error(event);
+
+        let msg = "Speech Error";
+
+        switch (event.error) {
+
+            case "not-allowed":
+                msg = "Δεν δόθηκε άδεια μικροφώνου.";
                 break;
-            case 'no-speech':
-                errorMsg = "Δεν ανιχνεύθηκε ομιλία. Προσπαθήστε ξανά.";
+
+            case "network":
+                msg = "Network error.";
                 break;
+
+            case "no-speech":
+                msg = "Δεν ακούστηκε ομιλία.";
+                break;
+
+            case "audio-capture":
+                msg = "Δεν βρέθηκε μικρόφωνο.";
+                break;
+
             default:
-                errorMsg = "Σφάλμα μικροφώνου: " + event.error;
+                msg = "Speech Error: " + event.error;
         }
-        document.getElementById("status").innerHTML = "❌ " + errorMsg;
-        document.getElementById("status").style.color = "#ff453a";
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
-            mediaStream = null;
-        }
-        isListening = false;
+
+        setStatus(msg, "#ff453a");
+    };
+
+    // ==============================
+    // END
+    // ==============================
+
+    recognition.onend = () => {
+
+        console.log("Speech recognition ended");
     };
 }
 
-// Συνάρτηση που ζητάει άδεια μικροφώνου και μετά ξεκινά το recognition
-async function startVoiceRecording() {
-    if (!recognition) {
-        document.getElementById("status").innerHTML = "❌ Η υπαγόρευση δεν υποστηρίζεται.";
-        return;
-    }
-    if (isListening) return;
-    
-    // Ζητάμε δικαίωμα μικροφώνου (απαραίτητο στο add‑in WebView)
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStream = stream; // κρατάμε για να κλείσουμε μετά
-        recognition.start();
-    } catch (err) {
-        console.error("getUserMedia error:", err);
-        let msg = "Δεν μπόρεσα να αποκτήσω πρόσβαση στο μικρόφωνο.";
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            msg = "Η πρόσβαση στο μικρόφωνο απορρίφθηκε. Ελέγξτε τις ρυθμίσεις ασφαλείας του Outlook.";
-        }
-        document.getElementById("status").innerHTML = "❌ " + msg;
-        document.getElementById("status").style.color = "#ff453a";
-        if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
-            mediaStream = null;
-        }
-    }
-}
-
-function enableMicrophoneButton(enabled) {
-    const btn = document.getElementById("actionBtn");
-    btn.disabled = !enabled;
-    if (!enabled) {
-        btn.style.opacity = "0.5";
-    } else {
-        btn.style.opacity = "1";
-    }
-}
-
-// Οι υπόλοιπες συναρτήσεις extractEmailAndProcess και callGeminiAPI παραμένουν IDENTICAL με πριν
-// (δεν τις αλλάζουμε, αλλά επισυνάπτονται για πληρότητα)
+// ==============================
+// READ EMAIL
+// ==============================
 
 function extractEmailAndProcess(voiceCommand) {
-    Office.context.mailbox.item.body.getAsync(Office.CoercionType.Text, function (asyncResult) {
-        if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
-            const emailBody = asyncResult.value;
-            document.getElementById("status").innerHTML = "🤖 Στέλνω δεδομένα στο Gemini AI...";
-            callGeminiAPI(emailBody, voiceCommand);
-        } else {
-            document.getElementById("status").innerHTML = "❌ Σφάλμα ανάγνωσης email.";
+
+    setStatus(
+        "Διαβάζω το email...",
+        "#0a84ff"
+    );
+
+    Office.context.mailbox.item.body.getAsync(
+        Office.CoercionType.Text,
+
+        function (asyncResult) {
+
+            if (
+                asyncResult.status ===
+                Office.AsyncResultStatus.Succeeded
+            ) {
+
+                const emailBody = asyncResult.value;
+
+                console.log("EMAIL:", emailBody);
+
+                callGeminiAPI(
+                    emailBody,
+                    voiceCommand
+                );
+
+            } else {
+
+                console.error(asyncResult.error);
+
+                setStatus(
+                    "Σφάλμα ανάγνωσης email.",
+                    "#ff453a"
+                );
+            }
         }
-    });
+    );
 }
 
-async function callGeminiAPI(emailText, voiceCommand) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    
-    const prompt = `
-Είσαι Executive Assistant. 
-Email Πελάτη: "${emailText}"
-Φωνητική Εντολή Αφεντικού: "${voiceCommand}"
+// ==============================
+// GEMINI API
+// ==============================
 
-Εξήγαγε JSON με: "summary" (σύνοψη), "email_reply" (επίσημη απάντηση), και "order_data" (δεδομένα φόρμας πχ όνομα, ποσό).
-Απάντησε ΑΥΣΤΗΡΑ ΚΑΙ ΜΟΝΟ σε μορφή JSON.
+async function callGeminiAPI(
+    emailText,
+    voiceCommand
+) {
+
+    setStatus(
+        "Στέλνω δεδομένα στο Gemini AI...",
+        "#0a84ff"
+    );
+
+    const url =
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const prompt = `
+Είσαι Executive Assistant.
+
+EMAIL:
+${emailText}
+
+ΦΩΝΗΤΙΚΗ ΕΝΤΟΛΗ:
+${voiceCommand}
+
+Ανάλυσε το email και δημιούργησε:
+
+1. summary
+2. email_reply
+3. action_items
+4. order_data
+
+Απάντησε ΜΟΝΟ σε JSON μορφή.
 `;
 
     const requestBody = {
-        "contents": [{ "parts": [{"text": prompt}] }],
-        "generationConfig": { "responseMimeType": "application/json" }
+
+        contents: [
+            {
+                parts: [
+                    {
+                        text: prompt
+                    }
+                ]
+            }
+        ],
+
+        generationConfig: {
+            temperature: 0.4,
+            responseMimeType: "application/json"
+        }
     };
 
     try {
+
         const response = await fetch(url, {
+
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
             body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();
-        
-        if (data.error) throw new Error(data.error.message);
 
-        const aiResultText = data.candidates[0].content.parts[0].text;
-        
-        document.getElementById("status").innerHTML = "✅ Επιτυχία!";
-        document.getElementById("status").style.color = "#32d74b";
-        document.getElementById("result").style.display = "block";
-        document.getElementById("result").innerText = aiResultText;
+        console.log(data);
 
-    } catch (error) {
-        document.getElementById("status").innerHTML = "❌ Σφάλμα AI: " + error.message;
-        document.getElementById("status").style.color = "#ff453a";
+        if (data.error) {
+
+            throw new Error(data.error.message);
+        }
+
+        const aiText =
+            data.candidates[0]
+                .content.parts[0].text;
+
+        showResult(aiText);
+
+        // Προαιρετικά:
+        // αυτόματη εισαγωγή reply draft
+        insertReplyIntoOutlook(aiText);
+
+    } catch (err) {
+
+        console.error(err);
+
+        setStatus(
+            "Σφάλμα AI: " + err.message,
+            "#ff453a"
+        );
     }
+}
+
+// ==============================
+// SHOW RESULT
+// ==============================
+
+function showResult(text) {
+
+    setStatus(
+        "Το AI ολοκλήρωσε την επεξεργασία!",
+        "#32d74b"
+    );
+
+    resultEl.style.display = "block";
+
+    try {
+
+        const parsed = JSON.parse(text);
+
+        resultEl.innerText =
+            JSON.stringify(parsed, null, 2);
+
+    } catch {
+
+        resultEl.innerText = text;
+    }
+}
+
+// ==============================
+// INSERT REPLY INTO OUTLOOK
+// ==============================
+
+function insertReplyIntoOutlook(aiText) {
+
+    try {
+
+        const parsed = JSON.parse(aiText);
+
+        if (!parsed.email_reply) {
+            return;
+        }
+
+        const replyText = parsed.email_reply;
+
+        Office.context.mailbox.item.displayReplyForm({
+            htmlBody:
+                `
+                <div style="font-family:Segoe UI;padding:10px;">
+                    ${replyText.replace(/\n/g, "<br>")}
+                </div>
+                `
+        });
+
+    } catch (err) {
+
+        console.error(
+            "Reply insert error:",
+            err
+        );
+    }
+}
+
+// ==============================
+// STATUS HELPER
+// ==============================
+
+function setStatus(message, color = "#ffffff") {
+
+    statusEl.innerText = message;
+    statusEl.style.color = color;
 }
