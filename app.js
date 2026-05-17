@@ -26,7 +26,6 @@ function loadSettings() {
     const saved = localStorage.getItem('aiAssistConfig');
     if (saved) config = { ...config, ...JSON.parse(saved) };
     
-    // Populate settings view
     document.getElementById('setApiKey').value = config.apiKey;
     document.getElementById('setModel').value = config.model;
     document.getElementById('setTone').value = config.tone;
@@ -56,7 +55,7 @@ function navigate(viewId) {
     document.getElementById(viewId).classList.add('view-active');
 }
 
-// --- OUTLOOK DATA FETCH ---
+// --- OUTLOOK DATA FETCH (THE HTML FIX) ---
 function initOutlookData() {
     const item = Office.context.mailbox.item;
     emailContext.meta = {
@@ -66,14 +65,22 @@ function initOutlookData() {
         toRecipients: item.to ? item.to.map(r => r.displayName).join(", ") : "Μόνο εγώ"
     };
 
-    // ΑΛΛΑΓΗ 1: Ζητάμε HTML για να φέρει ΟΛΟ το ιστορικό της συνομιλίας
     item.body.getAsync(Office.CoercionType.Html, (result) => {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
             
-            // Μετατρέπουμε το HTML σε καθαρό κείμενο για να το καταλάβει το Gemini
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(result.value, 'text/html');
-            emailContext.text = doc.body.textContent || doc.body.innerText || "";
+            // ΚΑΘΑΡΙΣΜΟΣ HTML: Κρατάμε τα Enters για να βλέπει το AI τα όρια των μηνυμάτων
+            let cleanText = result.value
+                .replace(/<style[^>]*>.*?<\/style>/gi, '') // Βγάζουμε το CSS
+                .replace(/<script[^>]*>.*?<\/script>/gi, '') // Βγάζουμε JS
+                .replace(/<br\s*[\/]?>/gi, '\n') // Αλλάζουμε τα br σε enter
+                .replace(/<\/p>/gi, '\n\n') // Αλλάζουμε τις παραγράφους σε διπλό enter
+                .replace(/<\/div>/gi, '\n') // Αλλάζουμε τα div σε enter
+                .replace(/<[^>]+>/g, ''); // Διαγράφουμε ό,τι άλλο tag απέμεινε
+            
+            // Το περνάμε από Textarea για να φτιάξει τα &amp; &nbsp; κλπ
+            const txt = document.createElement('textarea');
+            txt.innerHTML = cleanText;
+            emailContext.text = txt.value.trim();
             
             if (config.autoSum && config.apiKey) {
                 generateSummary();
@@ -116,9 +123,8 @@ function showManualSummaryBtn() {
 // --- SUMMARY GENERATION ---
 async function generateSummary() {
     if (!config.apiKey) return;
-    startLoadingAnim(["Διαβάζω όλο το Thread...", "Αναλύω τα δεδομένα...", "Ετοιμάζω σύνοψη..."]);
+    startLoadingAnim(["Διαβάζω το Thread...", "Αναλύω τη συνομιλία...", "Ετοιμάζω σύνοψη..."]);
     
-    // ΑΛΛΑΓΗ 2: Πλέον η σύνοψη χρησιμοποιεί δυναμικά το Μοντέλο που διάλεξες στις ρυθμίσεις!
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
     const prompt = `Κάνε μια πολύ σύντομη, περιεκτική σύνοψη (max 3-4 γραμμές) στα Ελληνικά για την παρακάτω συνομιλία email. Ποιος στέλνει το τελευταίο μήνυμα και τι ζητάει.\nΣυνομιλία:\n${emailContext.text}`;
     
@@ -129,15 +135,13 @@ async function generateSummary() {
         });
         const data = await res.json();
         stopLoadingAnim();
-        
         if (data.error) throw new Error(data.error.message);
 
         const summary = data.candidates[0].content.parts[0].text;
         const sumEl = document.getElementById('summaryText');
         sumEl.innerText = summary;
         
-        // Check if expand button is needed
-        if (sumEl.scrollHeight > 96) { // 96px is max-h-24
+        if (sumEl.scrollHeight > 96) { 
             document.getElementById('summaryFade').style.display = 'block';
             const expBtn = document.getElementById('expandSummaryBtn');
             expBtn.style.display = 'block';
@@ -149,20 +153,17 @@ async function generateSummary() {
         }
     } catch (e) {
         stopLoadingAnim();
-        // Προσθέσαμε το e.message για να βλέπουμε ποιο ακριβώς είναι το λάθος αν ξανασκάσει
         document.getElementById('summaryText').innerText = "Σφάλμα κατά τη σύνοψη: " + e.message;
     }
 }
 
 // --- ACTION LOGIC (Text, Quick Actions, Voice) ---
 
-// 1. Quick Actions
 function handleQuickAction(actionType) {
     if(!config.apiKey) return alert("Βάλε API Key στις ρυθμίσεις");
     generateDraft(actionType, null);
 }
 
-// 2. Text Input
 document.getElementById('sendTextBtn').onclick = () => {
     const input = document.getElementById('textPrompt').value.trim();
     if(input && config.apiKey) {
@@ -176,11 +177,11 @@ document.getElementById('tweakBtn').onclick = () => {
     if(tweak) {
         const currentDraft = document.getElementById('draftTextarea').value;
         document.getElementById('tweakPrompt').value = '';
-        generateDraft(`Τροποποίησε το κείμενο: "${currentDraft}". ΟΔΗΓΙΑ ΤΡΟΠΟΠΟΙΗΣΗΣ: ${tweak}`, null);
+        // Force the intent to be a draft when tweaking
+        generateDraft(`ΟΔΗΓΙΑ ΤΡΟΠΟΠΟΙΗΣΗΣ EMAIL: "${tweak}". Τροποποίησε αυτό το κείμενο που έγραψες: "${currentDraft}"`, null);
     }
 }
 
-// 3. Voice Input
 const voiceBtn = document.getElementById('voiceBtn');
 const voiceStatus = document.getElementById('voiceStatus');
 
@@ -212,7 +213,7 @@ function startRecording() {
             reader.onloadend = () => {
                 const b64 = reader.result.split(',')[1];
                 const mime = (mediaRecorder.mimeType || 'audio/webm').split(';')[0];
-                generateDraft("Απάντα με βάση την ηχητική εντολή.", { data: b64, mimeType: mime });
+                generateDraft("Αυτό είναι ηχητικό μήνυμα.", { data: b64, mimeType: mime });
             };
         };
 
@@ -237,34 +238,46 @@ function stopRecording() {
     lucide.createIcons();
 }
 
-// --- CORE GENERATOR ENGINE ---
+// --- CORE GENERATOR ENGINE (INTENT AWARE) ---
 async function generateDraft(instruction, audioObj) {
-    voiceStatus.innerText = "Δημιουργία απάντησης...";
+    voiceStatus.innerText = "Σκέφτομαι...";
     
-    // ΑΛΛΑΓΗ 3: Προηγμένο Prompt για ανάγνωση της συνομιλίας "Από κάτω προς τα πάνω"
-    const systemPrompt = `Είσαι ένας έμπειρος Executive Assistant. Σου δίνεται ένα ολόκληρο ιστορικό συνομιλίας (Email Thread) το οποίο περιέχει πολλαπλά μηνύματα.
-
-ΚΑΝΟΝΕΣ ΑΝΑΛΥΣΗΣ ΙΣΤΟΡΙΚΟΥ:
-1. Το κείμενο περιέχει όλη την κουβέντα. Τα πιο παλιά μηνύματα είναι συνήθως στο κάτω μέρος (συχνά ξεκινούν με γραμμές όπως "Στις... έγραψε:") και τα πιο πρόσφατα είναι στην κορυφή.
-2. Διάβασε προσεκτικά ΟΛΑ τα μηνύματα για να καταλάβεις τη ροή της κουβέντας, τι έχει συμφωνηθεί, τι ρώτησε ο πελάτης πριν και τι του απαντήσαμε.
-3. Εντόπισε το ΤΕΛΕΥΤΑΙΟ ΚΑΙ ΠΙΟ ΠΡΟΣΦΑΤΟ μήνυμα που στάλθηκε από τον πελάτη (${emailContext.meta.senderName}). 
-4. Γράψε ΑΠΕΥΘΕΙΑΣ το κείμενο της απάντησης (χωρίς JSON) απαντώντας ΑΠΟΚΛΕΙΣΤΙΚΑ σε αυτό το τελευταίο μήνυμα, αλλά έχοντας ως γνώμονα όσα ειπώθηκαν παραπάνω.
-
-ANTI-HALLUCINATION & ΤΟΝΟΣ:
-- ΤΟΝΟΣ ΑΠΑΝΤΗΣΗΣ: ${config.tone}
-- ΕΞΤΡΑ ΚΑΝΟΝΕΣ ΧΡΗΣΤΗ: ${config.customPrompt}
-- Μην κάνεις υποθέσεις. Μην επινοείς στοιχεία. Αν ο πελάτης ρωτάει "πόσο θα κοστίσει" ή "πόσες μέρες θα χρειαστούν", άκουσε την εντολή του αφεντικού στον ήχο/κείμενο. Αν δεν αναφέρεται συγκεκριμένη πληροφορία στον ήχο, γράψε στην απάντηση ότι "θα το εξετάσουμε και θα σας ενημερώσουμε άμεσα" ή ζήτα μου διευκρίνιση. ΜΗΝ βγάλεις στην τύχη σου νούμερα.
+    // ΝΕΟ PROMPT: Του λέμε να ξεχωρίζει τι του ζητάς και να το επιστρέφει σε JSON
+    const systemPrompt = `Είσαι ένας έμπειρος Executive Assistant. Έχεις μπροστά σου το ιστορικό μιας συνομιλίας (Email Thread). 
+Τα πιο πρόσφατα μηνύματα είναι στην κορυφή, τα παλαιότερα στο κάτω μέρος.
 
 ΣΤΟΙΧΕΙΑ ΜΗΝΥΜΑΤΟΣ: 
 Αποστολέας: ${emailContext.meta.senderName} (${emailContext.meta.senderEmail})
 Θέμα: ${emailContext.meta.subject}
 
-ΟΛΟΚΛΗΡΟ ΤΟ ΙΣΤΟΡΙΚΟ ΣΥΝΟΜΙΛΙΑΣ (THREAD):
+ΙΣΤΟΡΙΚΟ ΣΥΝΟΜΙΛΙΑΣ:
 """
 ${emailContext.text}
 """
 
-ΟΔΗΓΙΑ ΑΦΕΝΤΙΚΟΥ (Από ήχο ή κείμενο): ${instruction}`;
+ΟΔΗΓΙΑ/ΕΡΩΤΗΣΗ ΧΡΗΣΤΗ (Από ήχο ή κείμενο): ${instruction}
+
+ΚΑΘΗΚΟΝ:
+Πρέπει να καταλάβεις αν ο χρήστης σου ζητάει να ΓΡΑΨΕΙΣ ΜΙΑ ΑΠΑΝΤΗΣΗ (π.χ. "δέξου το", "απάντα ότι", "γράψε ένα mail") ή αν σου κάνει μια ΕΡΩΤΗΣΗ/ΣΥΖΗΤΗΣΗ (π.χ. "τι λέει εδώ;", "ποιος είναι;", "τι έγινε;").
+
+Πρέπει ΑΥΣΤΗΡΑ να απαντήσεις ΜΟΝΟ με ένα JSON αντικείμενο, ακριβώς σε αυτή τη μορφή:
+{
+  "intent": "draft",
+  "content": "Το κείμενο σου εδώ"
+}
+ή 
+{
+  "intent": "question",
+  "content": "Η απάντησή σου εδώ"
+}
+
+ΚΑΝΟΝΕΣ ΑΝ intent == "draft":
+- Γράψε ΑΠΕΥΘΕΙΑΣ το κείμενο του email προς τον πελάτη.
+- ΤΟΝΟΣ: ${config.tone}. EXTRA ΚΑΝΟΝΕΣ: ${config.customPrompt}.
+
+ΚΑΝΟΝΕΣ ΑΝ intent == "question":
+- Δώσε μια ξεκάθαρη, φιλική απάντηση στον χρήστη. 
+- ΜΗΝ το γράφεις σαν email.`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
     
@@ -276,21 +289,37 @@ ${emailContext.text}
     try {
         const res = await fetch(url, {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: parts }] })
+            body: JSON.stringify({ 
+                contents: [{ parts: parts }],
+                generationConfig: { responseMimeType: "application/json" } 
+            })
         });
         
         const data = await res.json();
         if(data.error) throw new Error(data.error.message);
         
-        const draft = data.candidates[0].content.parts[0].text.trim();
+        const rawResponse = data.candidates[0].content.parts[0].text.trim();
         
-        // Show Draft Page
-        document.getElementById('draftTextarea').value = draft;
-        navigate('view-draft');
+        // Clean up markdown just in case
+        const cleanJsonString = rawResponse.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsedResponse = JSON.parse(cleanJsonString);
+        
+        // --- SMART ROUTING BASED ON INTENT ---
+        if (parsedResponse.intent === "question") {
+            // Ο χρήστης έκανε ερώτηση -> Πάμε στην οθόνη ερωτήσεων
+            document.getElementById('answerText').innerText = parsedResponse.content;
+            navigate('view-answer');
+        } else {
+            // Ο χρήστης ζήτησε email -> Πάμε στο Draft
+            document.getElementById('draftTextarea').value = parsedResponse.content;
+            navigate('view-draft');
+        }
+        
         voiceStatus.innerText = "Κάντε κλικ για ομιλία";
         
     } catch (e) {
-        alert("Σφάλμα AI: " + e.message);
+        console.error(e);
+        alert("Σφάλμα AI: Βεβαιωθείτε ότι το Prompt ήταν ξεκάθαρο.");
         voiceStatus.innerText = "Σφάλμα. Προσπαθήστε ξανά.";
     }
 }
@@ -299,7 +328,6 @@ ${emailContext.text}
 document.getElementById('insertOutlookBtn').onclick = () => {
     const finalTxt = document.getElementById('draftTextarea').value;
     Office.context.mailbox.item.displayReplyForm(finalTxt);
-    // Return to main and clear
     document.getElementById('draftTextarea').value = '';
     navigate('view-main');
 };
