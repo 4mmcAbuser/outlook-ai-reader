@@ -85,11 +85,10 @@
         <div class="mb-5">
             <h2 class="text-xs font-bold uppercase tracking-wider text-mutedForeground mb-2">Άμεσες Ενέργειες</h2>
             <div class="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
-                <button onclick="handleQuickAction('Ευχαρίστησε θερμά')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">👍 Ευχαριστώ</button>
-                <button onclick="handleQuickAction('Δώσε θετική απάντηση και αποδοχή')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">✅ Αποδοχή</button>
-                <button onclick="handleQuickAction('Δώσε ευγενική αλλά αρνητική απάντηση')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">❌ Απόρριψη</button>
-                <button onclick="handleQuickAction('Πες ότι θα το σκεφτούμε και θα επανέλθουμε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">⏳ Θα επανέλθω</button>
-                <button onclick="handleQuickAction('Ζήτα ευγενικά περισσότερες διευκρινίσεις για να προχωρήσουμε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">❓ Διευκρίνιση</button>
+                <button onclick="handleQuickAction('Γράψε μια απάντηση όπου θα ευχαριστείς θερμά')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">👍 Ευχαριστώ</button>
+                <button onclick="handleQuickAction('Γράψε μια απάντηση ότι αποδεχόμαστε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">✅ Αποδοχή</button>
+                <button onclick="handleQuickAction('Γράψε μια ευγενική αρνητική απάντηση απόρριψης')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">❌ Απόρριψη</button>
+                <button onclick="handleQuickAction('Γράψε ότι θα το σκεφτούμε και θα επανέλθουμε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">⏳ Θα επανέλθω</button>
             </div>
         </div>
 
@@ -101,7 +100,7 @@
         </div>
 
         <div class="mt-auto relative">
-            <input type="text" id="textPrompt" placeholder="Ή γράψτε μια οδηγία..." class="w-full bg-card border border-border text-sm rounded-full py-3 pl-4 pr-12 focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-mutedForeground">
+            <input type="text" id="textPrompt" placeholder="Ή γράψτε μια οδηγία / ερώτηση..." class="w-full bg-card border border-border text-sm rounded-full py-3 pl-4 pr-12 focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-mutedForeground">
             <button id="sendTextBtn" class="absolute right-1 top-1 bottom-1 w-10 bg-secondary hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-colors text-mutedForeground">
                 <i data-lucide="arrow-up" class="w-4 h-4"></i>
             </button>
@@ -113,7 +112,7 @@
             <button onclick="navigate('view-main')" class="p-1.5 rounded-md hover:bg-secondary transition-colors text-mutedForeground">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
-            <h1 class="text-sm font-semibold text-primary">Προτεινόμενη Απάντηση</h1>
+            <h1 class="text-sm font-semibold text-primary">Πρόχειρο Απάντησης</h1>
         </header>
 
         <div class="flex-grow flex flex-col gap-3">
@@ -131,7 +130,7 @@
                     Ακύρωση
                 </button>
                 <button id="insertOutlookBtn" class="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-md">
-                    <i data-lucide="send" class="w-4 h-4"></i> Αποστολή
+                    <i data-lucide="send" class="w-4 h-4"></i> Επικόλληση
                 </button>
             </div>
         </div>
@@ -150,7 +149,6 @@
                 <label class="text-xs font-medium text-mutedForeground">Gemini API Key</label>
                 <input type="password" id="setApiKey" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
             </div>
-
             <div class="space-y-1.5">
                 <label class="text-xs font-medium text-mutedForeground">Μοντέλο AI</label>
                 <select id="setModel" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none">
@@ -159,7 +157,6 @@
                     <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro (Πιο Έξυπνο)</option>
                 </select>
             </div>
-
             <div class="space-y-1.5">
                 <label class="text-xs font-medium text-mutedForeground">Προεπιλεγμένος Τόνος</label>
                 <select id="setTone" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none">
@@ -169,7 +166,6 @@
                     <option value="Άμεσος, σύντομος και περιεκτικός χωρίς πολλά λόγια.">Άμεσος (Σύντομος)</option>
                 </select>
             </div>
-
             <div class="flex items-center justify-between bg-card border border-border p-3 rounded-lg">
                 <label class="text-sm font-medium text-primary">Αυτόματη Σύνοψη</label>
                 <label class="relative inline-flex items-center cursor-pointer">
@@ -177,18 +173,35 @@
                     <div class="w-9 h-5 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                 </label>
             </div>
-
             <div class="space-y-1.5">
                 <label class="text-xs font-medium text-mutedForeground">Πρόσθετες Οδηγίες (Custom Prompt)</label>
                 <textarea id="setCustomPrompt" placeholder="π.χ. Υπόγραφε πάντα ως 'Η ομάδα της εταιρείας'." class="w-full bg-card border border-border rounded-lg p-2.5 text-sm h-24 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
             </div>
-
             <button onclick="saveSettings()" class="w-full bg-primary text-primaryForeground py-2.5 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors mt-2">
                 Αποθήκευση Ρυθμίσεων
             </button>
         </div>
     </div>
 
-    <script src="app.js?v=6"></script>
+    <div id="view-answer" class="view-section p-4">
+        <header class="flex items-center mb-4 gap-3">
+            <button onclick="navigate('view-main')" class="p-1.5 rounded-md hover:bg-secondary transition-colors text-mutedForeground">
+                <i data-lucide="arrow-left" class="w-5 h-5"></i>
+            </button>
+            <h1 class="text-sm font-semibold text-primary">Απάντηση</h1>
+        </header>
+
+        <div class="flex-grow flex flex-col gap-3">
+            <div class="bg-card border border-border rounded-xl p-5 shadow-sm min-h-[150px]">
+                <p id="answerText" class="text-sm text-primary leading-relaxed whitespace-pre-wrap"></p>
+            </div>
+            
+            <button onclick="navigate('view-main')" class="mt-4 bg-secondary hover:bg-border border border-border text-primary py-2.5 rounded-lg text-sm font-medium transition-colors">
+                Νέα Ερώτηση
+            </button>
+        </div>
+    </div>
+
+    <script src="app.js?v=9"></script>
 </body>
 </html>
