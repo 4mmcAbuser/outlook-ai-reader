@@ -65,32 +65,36 @@ function initOutlookData() {
         toRecipients: item.to ? item.to.map(r => r.displayName).join(", ") : "Μόνο εγώ"
     };
 
-    item.body.getAsync(Office.CoercionType.Html, (result) => {
-        if (result.status === Office.AsyncResultStatus.Succeeded) {
-            
-            // ΚΑΘΑΡΙΣΜΟΣ HTML: Κρατάμε τα Enters για να βλέπει το AI τα όρια των μηνυμάτων
-            let cleanText = result.value
-                .replace(/<style[^>]*>.*?<\/style>/gi, '') // Βγάζουμε το CSS
-                .replace(/<script[^>]*>.*?<\/script>/gi, '') // Βγάζουμε JS
-                .replace(/<br\s*[\/]?>/gi, '\n') // Αλλάζουμε τα br σε enter
-                .replace(/<\/p>/gi, '\n\n') // Αλλάζουμε τις παραγράφους σε διπλό enter
-                .replace(/<\/div>/gi, '\n') // Αλλάζουμε τα div σε enter
-                .replace(/<[^>]+>/g, ''); // Διαγράφουμε ό,τι άλλο tag απέμεινε
-            
-            // Το περνάμε από Textarea για να φτιάξει τα &amp; &nbsp; κλπ
-            const txt = document.createElement('textarea');
-            txt.innerHTML = cleanText;
-            emailContext.text = txt.value.trim();
-            
-            if (config.autoSum && config.apiKey) {
-                generateSummary();
+    // Χρησιμοποιούμε εναλλακτικά το CoercionType.Html αλλά με πλήρη υποστήριξη thread
+    if (item.body) {
+        item.body.getAsync(Office.CoercionType.Html, { coercionType: Office.CoercionType.Html }, (result) => {
+            if (result.status === Office.AsyncResultStatus.Succeeded) {
+                let rawHtml = result.value;
+                
+                // Αν το HTML περιέχει tags τύπου 'divRplyFwdMsg' (κλασικό Outlook thread marker)
+                // σημαίνει ότι έχει έρθει όλο το ιστορικό. Αν όχι, το Outlook μας περιόρισε.
+                let cleanText = rawHtml
+                    .replace(/<style[^>]*>.*?<\/style>/gi, '')
+                    .replace(/<script[^>]*>.*?<\/script>/gi, '')
+                    .replace(/<br\s*[\/]?>/gi, '\n')
+                    .replace(/<\/p>/gi, '\n\n')
+                    .replace(/<\/div>/gi, '\n')
+                    .replace(/<[^>]+>/g, '');
+                
+                const txt = document.createElement('textarea');
+                txt.innerHTML = cleanText;
+                emailContext.text = txt.value.trim();
+                
+                if (config.autoSum && config.apiKey) {
+                    generateSummary();
+                } else {
+                    showManualSummaryBtn();
+                }
             } else {
                 showManualSummaryBtn();
             }
-        } else {
-             console.error("Σφάλμα ανάγνωσης email από το Outlook.");
-        }
-    });
+        });
+    }
 }
 
 // --- FAKE LOADING ANIMATION ---
