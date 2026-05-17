@@ -66,14 +66,22 @@ function initOutlookData() {
         toRecipients: item.to ? item.to.map(r => r.displayName).join(", ") : "Μόνο εγώ"
     };
 
-    item.body.getAsync(Office.CoercionType.Text, (result) => {
+    // ΑΛΛΑΓΗ 1: Χρησιμοποιούμε Html αντί για Text για να διαβάζει όλο το ιστορικό της συνομιλίας
+    item.body.getAsync(Office.CoercionType.Html, (result) => {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
-            emailContext.text = result.value;
+            
+            // ΑΛΛΑΓΗ 2: Καθαρίζουμε το HTML για να το κάνουμε απλό κείμενο, διατηρώντας τα παλιά μηνύματα
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(result.value, 'text/html');
+            emailContext.text = doc.body.textContent || doc.body.innerText || "";
+            
             if (config.autoSum && config.apiKey) {
                 generateSummary();
             } else {
                 showManualSummaryBtn();
             }
+        } else {
+             console.error("Σφάλμα ανάγνωσης email από το Outlook.");
         }
     });
 }
@@ -110,8 +118,9 @@ async function generateSummary() {
     if (!config.apiKey) return;
     startLoadingAnim(["Διαβάζω το email...", "Αναλύω τα δεδομένα...", "Ετοιμάζω σύνοψη..."]);
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${config.apiKey}`;
-    const prompt = `Κάνε μια πολύ σύντομη, περιεκτική σύνοψη (max 3-4 γραμμές) στα Ελληνικά για το παρακάτω email. Ποιος στέλνει και τι ζητάει.\nEmail: ${emailContext.text}`;
+    // Χρησιμοποιούμε το επιλεγμένο μοντέλο και για τη σύνοψη (ώστε αν το 1.5 flash-latest έχει θέμα, να παίρνει το lite)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+    const prompt = `Κάνε μια πολύ σύντομη, περιεκτική σύνοψη (max 3-4 γραμμές) στα Ελληνικά για την παρακάτω συνομιλία email. Ποιος στέλνει το τελευταίο μήνυμα και τι ζητάει.\nΣυνομιλία:\n${emailContext.text}`;
     
     try {
         const res = await fetch(url, {
@@ -121,6 +130,8 @@ async function generateSummary() {
         const data = await res.json();
         stopLoadingAnim();
         
+        if (data.error) throw new Error(data.error.message);
+
         const summary = data.candidates[0].content.parts[0].text;
         const sumEl = document.getElementById('summaryText');
         sumEl.innerText = summary;
@@ -138,7 +149,7 @@ async function generateSummary() {
         }
     } catch (e) {
         stopLoadingAnim();
-        document.getElementById('summaryText').innerText = "Σφάλμα κατά τη σύνοψη.";
+        document.getElementById('summaryText').innerText = "Σφάλμα κατά τη σύνοψη: " + e.message;
     }
 }
 
@@ -229,17 +240,30 @@ function stopRecording() {
 async function generateDraft(instruction, audioObj) {
     voiceStatus.innerText = "Δημιουργία απάντησης...";
     
-    // Construct the Anti-Hallucination & Tone Prompt
-    const systemPrompt = `Είσαι Executive Assistant. 
-Ανάλυσε το email και γράψε ΑΠΕΥΘΕΙΑΣ το κείμενο της απάντησης (χωρίς JSON, χωρίς χαιρετισμούς δικούς σου προς εμένα).
-ΤΟΝΟΣ ΑΠΑΝΤΗΣΗΣ: ${config.tone}
-ΕΞΤΡΑ ΚΑΝΟΝΕΣ: ${config.customPrompt}
-ANTI-HALLUCINATION ΚΑΝΟΝΕΣ: Μην κάνεις υποθέσεις. Μην προσθέτεις ονόματα, ημερομηνίες ή ποσά που δεν αναφέρθηκαν στο email ή στην εντολή. Βασίσου αυστηρά στα δεδομένα.
+    // ΑΛΛΑΓΗ 3: Το νέο System Prompt που εκπαιδεύει το AI να διαβάζει τη συνομιλία χρονικά (από κάτω προς τα πάνω)
+    const systemPrompt = `Είσαι ένας έμπειρος Executive Assistant. Σου δίνεται ένα ολόκληρο ιστορικό συνομιλίας (Email Thread) το οποίο περιέχει πολλαπλά μηνύματα.
 
-ΣΤΟΙΧΕΙΑ ΠΕΛΑΤΗ: Αποστολέας: ${emailContext.meta.senderName}, Θέμα: ${emailContext.meta.subject}
-ΙΣΤΟΡΙΚΟ EMAIL: "${emailContext.text}"
+ΚΑΝΟΝΕΣ ΑΝΑΛΥΣΗΣ ΙΣΤΟΡΙΚΟΥ:
+1. Το κείμενο περιέχει όλη την κουβέντα. Τα πιο παλιά μηνύματα είναι συνήθως στο κάτω μέρος (συχνά ξεκινούν με γραμμές όπως "Στις Σάβ 16 Μαΐ... έγραψε:") και τα πιο πρόσφατα είναι στην κορυφή.
+2. Διάβασε προσεκτικά ΟΛΑ τα μηνύματα για να καταλάβεις τη ροή της κουβέντας, τι έχει συμφωνηθεί, τι ρώτησε ο πελάτης πριν και τι του απαντήσαμε.
+3. Εντόπισε το ΤΕΛΕΥΤΑΙΟ ΚΑΙ ΠΙΟ ΠΡΟΣΦΑΤΟ μήνυμα που στάλθηκε από τον πελάτη (${emailContext.meta.senderName}). 
+4. Γράψε ΑΠΕΥΘΕΙΑΣ το κείμενο της απάντησης (χωρίς JSON) απαντώντας ΑΠΟΚΛΕΙΣΤΙΚΑ σε αυτό το τελευταίο μήνυμα, αλλά έχοντας ως γνώμονα όσα ειπώθηκαν παραπάνω.
 
-ΕΝΤΟΛΗ ΧΡΗΣΤΗ: ${instruction}`;
+ANTI-HALLUCINATION & ΤΟΝΟΣ:
+- ΤΟΝΟΣ ΑΠΑΝΤΗΣΗΣ: ${config.tone}
+- ΕΞΤΡΑ ΚΑΝΟΝΕΣ ΧΡΗΣΤΗ: ${config.customPrompt}
+- Μην κάνεις υποθέσεις. Μην επινοείς στοιχεία. Αν ο πελάτης ρωτάει "πόσο θα κοστίσει" ή "πόσες μέρες θα χρειαστούν", άκουσε την εντολή του αφεντικού στον ήχο/κείμενο. Αν δεν αναφέρεται συγκεκριμένη πληροφορία, γράψε στην απάντηση ότι "θα το εξετάσουμε και θα σας ενημερώσουμε άμεσα". ΜΗΝ βγάλεις στην τύχη σου νούμερα.
+
+ΣΤΟΙΧΕΙΑ ΜΗΝΥΜΑΤΟΣ: 
+Αποστολέας: ${emailContext.meta.senderName} (${emailContext.meta.senderEmail})
+Θέμα: ${emailContext.meta.subject}
+
+ΟΛΟΚΛΗΡΟ ΤΟ ΙΣΤΟΡΙΚΟ ΣΥΝΟΜΙΛΙΑΣ (THREAD):
+"""
+${emailContext.text}
+"""
+
+ΟΔΗΓΙΑ ΑΦΕΝΤΙΚΟΥ (Από ήχο ή κείμενο): ${instruction}`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
     
