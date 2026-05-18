@@ -31,7 +31,6 @@ Office.onReady((info) => {
     if (info.host === Office.HostType.Outlook) {
         initOutlookData();
 
-        // Ανανέωση όταν ο χρήστης αλλάζει email στο Outlook
         Office.context.mailbox.addHandlerAsync(
             Office.EventType.ItemChanged,
             () => {
@@ -47,7 +46,6 @@ Office.onReady((info) => {
 // ----------------------
 function loadSettings() {
     const saved = localStorage.getItem('aiAssistConfig');
-
     if (saved) {
         config = { ...config, ...JSON.parse(saved) };
     }
@@ -71,7 +69,6 @@ function saveSettings() {
     config.customPrompt = document.getElementById('setCustomPrompt').value.trim();
 
     localStorage.setItem('aiAssistConfig', JSON.stringify(config));
-
     navigate('view-main');
 
     if (config.autoSum) {
@@ -79,9 +76,6 @@ function saveSettings() {
     }
 }
 
-// ----------------------
-// NAVIGATION
-// ----------------------
 function navigate(viewId) {
     document.querySelectorAll('.view-section').forEach(el => {
         el.classList.remove('view-active');
@@ -90,7 +84,7 @@ function navigate(viewId) {
 }
 
 // ----------------------
-// CLEAN HTML (Για το EWS)
+// CLEAN HTML
 // ----------------------
 function cleanHtmlToText(html) {
     if (!html) return '';
@@ -103,101 +97,71 @@ function cleanHtmlToText(html) {
         .replace(/<div[^>]*>/gi, '')
         .replace(/<[^>]+>/g, '')
         .replace(/\n{3,}/g, '\n\n')
+        .replace(/&nbsp;/g, ' ')
         .trim();
 }
 
 // ----------------------
-// GET FULL THREAD VIA EWS (Plan A)
+// GET FULL THREAD VIA REST API (ΤΟ ΑΠΟΛΥΤΟ ΚΟΛΠΟ)
 // ----------------------
-async function getFullConversationViaEWS() {
+async function getFullConversationViaREST() {
     return new Promise((resolve, reject) => {
         const item = Office.context.mailbox.item;
+        const convId = item.conversationId;
 
-        if (!item) {
-            reject(new Error("No item"));
+        if (!convId) {
+            reject(new Error("Δεν βρέθηκε Conversation ID"));
             return;
         }
 
-        item.getAllInternetHeadersAsync((headerResult) => {
-            if (headerResult.status !== Office.AsyncResultStatus.Succeeded) {
-                reject(new Error("Cannot read headers"));
+        // Ζητάμε Token Πρόσβασης για το REST API
+        Office.context.mailbox.getCallbackTokenAsync({ isRest: true }, (result) => {
+            if (result.status !== Office.AsyncResultStatus.Succeeded) {
+                reject(new Error("Το Token απέτυχε. Μήπως λείπει το ReadWriteMailbox στο Manifest;"));
                 return;
             }
 
-            const headers = headerResult.value || '';
-            const threadIndexMatch = headers.match(/Thread-Index:\s*(.+)/i);
-
-            if (!threadIndexMatch) {
-                reject(new Error("No Thread-Index found"));
+            const token = result.value;
+            const restUrl = Office.context.mailbox.restUrl;
+            
+            if (!restUrl) {
+                reject(new Error("Δεν υπάρχει REST URL"));
                 return;
             }
 
-            const threadIndex = threadIndexMatch[1].trim();
+            // Τραβάμε ΟΛΑ τα μηνύματα της συνομιλίας χρονολογικά
+            const url = `${restUrl}/v2.0/me/messages?$filter=ConversationId eq '${convId}'&$select=Sender,Subject,Body,DateTimeReceived&$orderby=DateTimeReceived asc&$top=20`;
 
-            const soap = `
-<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Header>
-        <t:RequestServerVersion Version="Exchange2016"/>
-    </soap:Header>
-    <soap:Body>
-        <m:FindItem Traversal="Deep">
-            <m:ItemShape>
-                <t:BaseShape>AllProperties</t:BaseShape>
-                <t:AdditionalProperties>
-                    <t:FieldURI FieldURI="item:Subject"/>
-                    <t:FieldURI FieldURI="item:DateTimeReceived"/>
-                    <t:FieldURI FieldURI="item:Body"/>
-                    <t:FieldURI FieldURI="message:From"/>
-                    <t:FieldURI FieldURI="message:Sender"/>
-                    <t:FieldURI FieldURI="item:ConversationId"/>
-                </t:AdditionalProperties>
-            </m:ItemShape>
-            <m:IndexedPageItemView MaxEntriesReturned="100" Offset="0" BasePoint="Beginning"/>
-            <m:Restriction>
-                <t:Contains ContainmentMode="Substring" ContainmentComparison="IgnoreCase">
-                    <t:FieldURI FieldURI="item:ConversationIndex"/>
-                    <t:Constant Value="${threadIndex.substring(0, 22)}"/>
-                </t:Contains>
-            </m:Restriction>
-            <m:ParentFolderIds>
-                <t:DistinguishedFolderId Id="msgfolderroot"/>
-            </m:ParentFolderIds>
-        </m:FindItem>
-    </soap:Body>
-</soap:Envelope>`;
-
-            Office.context.mailbox.makeEwsRequestAsync(soap, (result) => {
-                if (result.status !== Office.AsyncResultStatus.Succeeded) {
-                    reject(result.error);
-                    return;
+            fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
                 }
-
-                const parser = new DOMParser();
-                const xml = parser.parseFromString(result.value, "text/xml");
-                const messageNodes = xml.getElementsByTagName("t:Message");
-                const messages = [];
-
-                for (let i = 0; i < messageNodes.length; i++) {
-                    const msg = messageNodes[i];
-                    const subject = msg.getElementsByTagName("t:Subject")[0]?.textContent || '';
-                    const body = msg.getElementsByTagName("t:Body")[0]?.textContent || '';
-                    const received = msg.getElementsByTagName("t:DateTimeReceived")[0]?.textContent || '';
-                    let sender = 'Unknown';
-                    const fromNode = msg.getElementsByTagName("t:From")[0];
-
-                    if (fromNode) {
-                        sender = fromNode.getElementsByTagName("t:Name")[0]?.textContent || 'Unknown';
-                    }
-
-                    messages.push({
-                        sender, subject, body: cleanHtmlToText(body), received
+            })
+            .then(res => {
+                if (!res.ok) throw new Error(`REST Error: ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                if (data && data.value && data.value.length > 0) {
+                    const messages = data.value.map(m => {
+                        let senderName = "Άγνωστος";
+                        if (m.Sender && m.Sender.EmailAddress) {
+                            senderName = m.Sender.EmailAddress.Name || m.Sender.EmailAddress.Address;
+                        }
+                        return {
+                            sender: senderName,
+                            subject: m.Subject || "(Χωρίς Θέμα)",
+                            body: cleanHtmlToText(m.Body.Content),
+                            received: m.DateTimeReceived
+                        };
                     });
+                    resolve(messages);
+                } else {
+                    reject(new Error("Η συνομιλία βρέθηκε κενή στο REST"));
                 }
-
-                messages.sort((a, b) => new Date(a.received) - new Date(b.received));
-                resolve(messages);
-            });
+            })
+            .catch(err => reject(err));
         });
     });
 }
@@ -216,51 +180,53 @@ function initOutlookData() {
         receivedTime: item.dateTimeCreated ? new Date(item.dateTimeCreated).toLocaleString('el-GR') : ''
     };
 
-    startLoadingAnim(["Διαβάζω thread...", "Αναλύω συνομιλία...", "Φορτώνω ιστορικό..."]);
+    startLoadingAnim([
+        "Διαβάζω thread...",
+        "Αναλύω συνομιλία...",
+        "Φορτώνω ιστορικό..."
+    ]);
 
-    // Προσπαθούμε με EWS πρώτα (Plan A)
-    getFullConversationViaEWS()
+    // Προσπάθεια να φέρει όλο το Thread μέσω REST API
+    getFullConversationViaREST()
         .then(messages => {
             emailContext.fullConversation = messages;
-            const structured = messages.slice(-15).map(m => `FROM: ${m.sender}\nDATE: ${new Date(m.received).toLocaleString('el-GR')}\nSUBJECT: ${m.subject}\n\n${m.body}`).join("\n\n------------------------\n\n");
             
-            if (structured.trim() !== "") {
-                emailContext.text = structured;
-                finishLoading();
-            } else {
-                fallbackCurrentMail(); // Αν το EWS γυρίσει κενό
-            }
+            // Ενώνουμε τα μηνύματα με σαφή διαχωριστικά για το AI
+            const structured = messages
+                .map(m => `ΑΠΟ: ${m.sender}\nΗΜΕΡΟΜΗΝΙΑ: ${new Date(m.received).toLocaleString('el-GR')}\nΜΗΝΥΜΑ:\n${m.body}`)
+                .join("\n\n=== ΤΕΛΟΣ ΜΗΝΥΜΑΤΟΣ ===\n\n");
+
+            emailContext.text = structured;
+            console.log("Επιτυχία REST API. Μήκος:", emailContext.text.length);
+            finishLoading();
         })
         .catch(err => {
-            console.warn("EWS Failed, switching to fallback:", err);
-            fallbackCurrentMail(); // Plan B
+            console.warn("REST API Failed (Μήπως δεν έβαλες ReadWriteMailbox;):", err);
+            fallbackCurrentMail();
         });
 }
 
 // ----------------------
-// FALLBACK (Plan B - To Σίγουρο Text)
+// FALLBACK (Plan B)
 // ----------------------
 function fallbackCurrentMail() {
     const item = Office.context.mailbox.item;
-    if (!item || !item.body) {
+    if (!item.body) {
         stopLoadingAnim();
         return;
     }
 
-    // ΑΛΛΑΓΗ ΕΔΩ: Γυρίσαμε στο CoercionType.Text που φέρνει όλο το σεντόνι 100%
     item.body.getAsync(Office.CoercionType.Text, (result) => {
         stopLoadingAnim();
         if (result.status === Office.AsyncResultStatus.Succeeded) {
             emailContext.text = result.value;
             finishLoading();
-        } else {
-            console.error("Σφάλμα στο fallback");
         }
     });
 }
 
 // ----------------------
-// LOADING & UI
+// LOADING ANIMATION
 // ----------------------
 let loadingInterval;
 
@@ -282,7 +248,7 @@ function stopLoadingAnim() {
 
 function finishLoading() {
     stopLoadingAnim();
-    if (config.autoSum && config.apiKey && emailContext.text && emailContext.text.length > 10) {
+    if (config.autoSum && config.apiKey && emailContext.text) {
         generateSummary();
     }
 }
@@ -291,23 +257,23 @@ function finishLoading() {
 // SUMMARY
 // ----------------------
 async function generateSummary() {
-    const prompt = `Κάνε μια Executive σύντομη σύνοψη (max 3-4 γραμμές) για το παρακάτω email thread. 
-Περιέγραψε: Ποιος έστειλε το τελευταίο μήνυμα, τι ζητάει και αν υπάρχουν εκκρεμότητες.
-THREAD:\n${emailContext.text}`;
+    const prompt = `Κάνε σύντομη executive σύνοψη του παρακάτω email thread (max 4 γραμμές).
+Περιέγραψε: Ποιος έστειλε το τελευταίο μήνυμα, τι ζητάει, και αν υπάρχουν εκκρεμότητες.
+
+THREAD:
+${emailContext.text}`;
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
         const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
         });
 
         const data = await res.json();
         if (data.error) throw new Error(data.error.message);
 
-        const summary = data.candidates[0].content.parts[0].text;
-        document.getElementById('summaryText').innerText = summary;
+        document.getElementById('summaryText').innerText = data.candidates[0].content.parts[0].text;
     } catch (e) {
         console.error(e);
         document.getElementById('summaryText').innerText = 'Σφάλμα σύνοψης';
@@ -315,16 +281,13 @@ THREAD:\n${emailContext.text}`;
 }
 
 // ----------------------
-// QUICK ACTIONS
+// QUICK ACTIONS & TWEAKS
 // ----------------------
 function handleQuickAction(actionType) {
     if (!config.apiKey) { alert("Βάλε API Key"); return; }
     generateDraft(actionType, null);
 }
 
-// ----------------------
-// TEXT SEND
-// ----------------------
 document.getElementById('sendTextBtn').onclick = () => {
     const txt = document.getElementById('textPrompt').value.trim();
     if (!txt) return;
@@ -332,17 +295,12 @@ document.getElementById('sendTextBtn').onclick = () => {
     generateDraft(txt, null);
 };
 
-// ----------------------
-// TWEAK
-// ----------------------
 document.getElementById('tweakBtn').onclick = () => {
     const tweak = document.getElementById('tweakPrompt').value.trim();
     if (!tweak) return;
     const current = document.getElementById('draftTextarea').value;
     document.getElementById('tweakPrompt').value = '';
-    
-    // Force intent to draft for tweaks
-    generateDraft(`Τροποποίησε το email έτσι: "${tweak}".\nΑΚΡΙΒΕΣ ΠΑΛΙΟ EMAIL:\n"${current}"`, null);
+    generateDraft(`Τροποποίησε το προηγούμενο draft email σου σύμφωνα με αυτή την οδηγία: ${tweak}\n\nΠΑΛΙΟ EMAIL:\n${current}`, null);
 };
 
 // ----------------------
@@ -372,9 +330,7 @@ function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
-        
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-        
         mediaRecorder.onstop = () => {
             voiceStatus.innerText = 'Επεξεργασία ήχου...';
             const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
@@ -382,7 +338,7 @@ function startRecording() {
             reader.readAsDataURL(blob);
             reader.onloadend = () => {
                 const base64 = reader.result.split(',')[1];
-                generateDraft('Αυτό είναι ηχητικό μήνυμα/εντολή.', { data: base64, mimeType: mediaRecorder.mimeType || 'audio/webm' });
+                generateDraft('Αυτό είναι το ηχητικό μήνυμα/εντολή του χρήστη.', { data: base64, mimeType: mediaRecorder.mimeType || 'audio/webm' });
             };
         };
 
@@ -410,53 +366,39 @@ function stopRecording() {
 }
 
 // ----------------------
-// GENERATE DRAFT (THE ENGINE)
+// GENERATE DRAFT (AI ENGINE)
 // ----------------------
 async function generateDraft(instruction, audioObj) {
     voiceStatus.innerText = 'Σκέφτομαι...';
 
-    const systemPrompt = `Είσαι Executive AI Assistant. Διάβασε το παρακάτω ιστορικό email για να έχεις πλήρες context.
-
-ΣΤΟΙΧΕΙΑ: 
-Από: ${emailContext.meta.senderName} (${emailContext.meta.senderEmail})
-Θέμα: ${emailContext.meta.subject}
+    const systemPrompt = `Είσαι Executive AI Assistant. Έχεις το πλήρες ιστορικό μιας συνομιλίας (Email Thread).
+Τα μηνύματα είναι χωρισμένα με "=== ΤΕΛΟΣ ΜΗΝΥΜΑΤΟΣ ===". Το τελευταίο χρονολογικά μήνυμα βρίσκεται στο κάτω μέρος της λίστας.
 
 EMAIL THREAD:
-"""
 ${emailContext.text}
-"""
 
-USER REQUEST (Εντολή Αφεντικού):
+USER REQUEST:
 ${instruction}
 
 ΚΑΘΗΚΟΝ:
-Κατάλαβε αν ο χρήστης ζητάει να ΓΡΑΨΕΙΣ ΕΝΑ EMAIL ("απάντα", "στείλε", "ευχαρίστησε") ή αν σου κάνει μια ΕΡΩΤΗΣΗ ("ποιος είναι;", "τι έγινε;", "πότε λήγει;").
-
-Απάντησε ΑΥΣΤΗΡΑ ΚΑΙ ΜΟΝΟ με ένα JSON αντικείμενο, χωρίς markdown:
+Κατάλαβε αν ο χρήστης σου ζητάει να ΓΡΑΨΕΙΣ ΕΝΑ EMAIL (π.χ. "απάντα", "ευχαρίστησέ τον") ή αν σου κάνει μια ΕΡΩΤΗΣΗ/ΣΥΖΗΤΗΣΗ (π.χ. "τι λέει εδώ;", "ποιος είναι;").
+Απάντησε ΑΥΣΤΗΡΑ με JSON:
 {
  "intent": "draft" ή "question",
- "content": "Το παραγόμενο κείμενο εδώ"
+ "content": "Το κείμενό σου"
 }
 
-ΚΑΝΟΝΕΣ ΑΝ intent == "draft":
-- Γράψε ΑΠΕΥΘΕΙΑΣ το κείμενο του email απαντώντας στο ΤΕΛΕΥΤΑΙΟ μήνυμα του πελάτη.
-- ΤΟΝΟΣ: ${config.tone}. EXTRA ΚΑΝΟΝΕΣ: ${config.customPrompt}.
-- Απαγορεύεται να κάνεις υποθέσεις, να επινοείς τιμές ή ημερομηνίες που δεν ειπώθηκαν.
-
-ΚΑΝΟΝΕΣ ΑΝ intent == "question":
-- Δώσε μια απλή, άμεση και κατανοητή απάντηση στον χρήστη. ΜΗΝ τη γράφεις σαν email.`;
+ΚΑΝΟΝΕΣ:
+Αν intent="draft": Γράψε έτοιμο email απαντώντας στο ΤΕΛΕΥΤΑΙΟ μήνυμα του thread. Τόνος: ${config.tone}.
+Αν intent="question": Απάντα ξεκάθαρα στην ερώτηση, μην το γράψεις σαν email.`;
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
         const parts = [{ text: systemPrompt }];
-
-        if (audioObj) {
-            parts.push({ inlineData: { mimeType: audioObj.mimeType, data: audioObj.data } });
-        }
+        if (audioObj) parts.push({ inlineData: { mimeType: audioObj.mimeType, data: audioObj.data } });
 
         const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: [{ parts }],
                 generationConfig: { responseMimeType: "application/json" }
@@ -467,7 +409,7 @@ ${instruction}
         if (data.error) throw new Error(data.error.message);
 
         const raw = data.candidates[0].content.parts[0].text.trim();
-        const parsed = JSON.parse(raw.replace(/```json/gi, '').replace(/```/g, '').trim());
+        const parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
 
         if (parsed.intent === 'question') {
             document.getElementById('answerText').innerText = parsed.content;
@@ -478,10 +420,9 @@ ${instruction}
         }
 
         voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
-
     } catch (e) {
         console.error(e);
-        alert("Σφάλμα AI. Η απάντηση ίσως δεν ήταν έγκυρο JSON.");
+        alert("AI Error. Βεβαιώσου ότι ο ήχος ήταν καθαρός.");
         voiceStatus.innerText = 'Σφάλμα';
     }
 }
