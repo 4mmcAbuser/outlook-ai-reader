@@ -58,45 +58,77 @@ function navigate(viewId) {
 // --- OUTLOOK DATA FETCH (THE HTML FIX) ---
 function initOutlookData() {
     const item = Office.context.mailbox.item;
+    
     emailContext.meta = {
         senderName: item.sender ? item.sender.displayName : "Άγνωστος",
         senderEmail: item.sender ? item.sender.emailAddress : "unknown@mail.com",
-        subject: item.subject,
-        toRecipients: item.to ? item.to.map(r => r.displayName).join(", ") : "Μόνο εγώ"
+        subject: item.subject || "(Χωρίς θέμα)",
+        toRecipients: item.to ? item.to.map(r => r.displayName).join(", ") : ""
     };
 
-    // Χρησιμοποιούμε εναλλακτικά το CoercionType.Html αλλά με πλήρη υποστήριξη thread
     if (item.body) {
-        item.body.getAsync(Office.CoercionType.Html, { coercionType: Office.CoercionType.Html }, (result) => {
-            if (result.status === Office.AsyncResultStatus.Succeeded) {
-                let rawHtml = result.value;
+        // ΠΡΩΤΑ: Προσπάθησε με HTML (περιέχει περισσότερο περιεχόμενο)
+        item.body.getAsync(Office.CoercionType.Html, (htmlResult) => {
+            if (htmlResult.status === Office.AsyncResultStatus.Succeeded) {
+                let content = htmlResult.value;
                 
-                // Αν το HTML περιέχει tags τύπου 'divRplyFwdMsg' (κλασικό Outlook thread marker)
-                // σημαίνει ότι έχει έρθει όλο το ιστορικό. Αν όχι, το Outlook μας περιόρισε.
-                let cleanText = rawHtml
-                    .replace(/<style[^>]*>.*?<\/style>/gi, '')
-                    .replace(/<script[^>]*>.*?<\/script>/gi, '')
-                    .replace(/<br\s*[\/]?>/gi, '\n')
-                    .replace(/<\/p>/gi, '\n\n')
+                // Αφαίρεση όλων των display:none
+                content = content.replace(/display\s*:\s*none/g, 'display:block');
+                content = content.replace(/visibility\s*:\s*hidden/g, 'visibility:visible');
+                
+                // Αφαίρεση όλων των tags και μετατροπή σε text
+                let textContent = content
+                    .replace(/<br\s*\/?>/gi, '\n')
                     .replace(/<\/div>/gi, '\n')
-                    .replace(/<[^>]+>/g, '');
+                    .replace(/<div[^>]*>/gi, '')
+                    .replace(/<p[^>]*>/gi, '')
+                    .replace(/<\/p>/gi, '\n\n')
+                    .replace(/<[^>]+>/g, '')
+                    .replace(/&nbsp;/gi, ' ')
+                    .replace(/&amp;/gi, '&')
+                    .replace(/&lt;/gi, '<')
+                    .replace(/&gt;/gi, '>')
+                    .replace(/&quot;/gi, '"');
                 
-                const txt = document.createElement('textarea');
-                txt.innerHTML = cleanText;
-                emailContext.text = txt.value.trim();
+                // Decode HTML entities
+                const textarea = document.createElement('textarea');
+                textarea.innerHTML = textContent;
+                emailContext.text = textarea.value.trim();
                 
-                if (config.autoSum && config.apiKey) {
-                    generateSummary();
+                // Αν το κείμενο είναι πολύ μικρό, δοκίμασε Plain Text
+                if (emailContext.text.length < 200) {
+                    item.body.getAsync(Office.CoercionType.Text, (textResult) => {
+                        if (textResult.status === Office.AsyncResultStatus.Succeeded) {
+                            emailContext.text = textResult.value;
+                        }
+                        finishLoading();
+                    });
                 } else {
-                    showManualSummaryBtn();
+                    finishLoading();
                 }
             } else {
-                showManualSummaryBtn();
+                // Fallback: Plain Text
+                item.body.getAsync(Office.CoercionType.Text, (textResult) => {
+                    if (textResult.status === Office.AsyncResultStatus.Succeeded) {
+                        emailContext.text = textResult.value;
+                    }
+                    finishLoading();
+                });
             }
         });
     }
 }
 
+function finishLoading() {
+    if (config.autoSum && config.apiKey && emailContext.text && emailContext.text.length > 50) {
+        generateSummary();
+    } else {
+        showManualSummaryBtn();
+        if (emailContext.text && emailContext.text.length < 50) {
+            document.getElementById('summaryText').innerHTML = "⚠️ Το Outlook δεν επέτρεψε πρόσβαση σε ολόκληρη τη συνομιλία.<br>Δοκιμάστε να ανοίξετε το email σε ξεχωριστό παράθυρο.";
+        }
+    }
+}
 // --- FAKE LOADING ANIMATION ---
 let loadingInterval;
 function startLoadingAnim(messages) {
