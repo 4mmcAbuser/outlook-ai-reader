@@ -60,23 +60,21 @@ function navigate(viewId) {
     document.getElementById(viewId).classList.add('view-active');
 }
 
-// --- EWS: ΑΝΑΚΤΗΣΗ ΟΛΟΚΛΗΡΗΣ ΣΥΝΟΜΙΛΙΑΣ (χωρίς backend) ---
-async function getFullConversationViaEWS() {
+// --- EWS: ΑΝΑΚΤΗΣΗ ΟΛΟΚΛΗΡΗΣ ΣΥΝΟΜΙΛΙΑΣ (no jQuery, full mailbox) ---
+function getFullConversationViaEWS() {
     return new Promise((resolve, reject) => {
-        const itemId = Office.context.mailbox.item.itemId;
         const conversationId = Office.context.mailbox.item.conversationId;
-        const ewsUrl = Office.context.mailbox.ewsUrl;
-        
-        if (!ewsUrl || !conversationId) {
-            reject(new Error("Missing EWS URL or Conversation ID"));
+        if (!conversationId) {
+            reject(new Error("Missing Conversation ID"));
             return;
         }
 
-        // 1. FindItem SOAP request για να βρούμε όλα τα items της συνομιλίας
+        // 1. FindItem SOAP request – ψάχνουμε σε ΟΛΟ το γραμματοκιβώτιο (root)
         const findItemSoap = `<?xml version="1.0" encoding="utf-8"?>
-        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-            xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
-            xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
+        <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                      xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                      xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                      xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
             <soap:Header>
                 <t:RequestServerVersion Version="Exchange2013" />
             </soap:Header>
@@ -87,14 +85,10 @@ async function getFullConversationViaEWS() {
                         <t:AdditionalProperties>
                             <t:FieldURI FieldURI="item:Subject" />
                             <t:FieldURI FieldURI="item:DateTimeReceived" />
-                            <t:FieldURI FieldURI="item:Body" />
                             <t:FieldURI FieldURI="item:Sender" />
+                            <t:FieldURI FieldURI="item:ItemId" />
                         </t:AdditionalProperties>
                     </m:ItemShape>
-                    <m:IndexedPageItemView MaxEntriesReturned="100" Offset="0" BasePoint="Beginning" />
-                    <m:ParentFolderIds>
-                        <t:DistinguishedFolderId Id="inbox" />
-                    </m:ParentFolderIds>
                     <m:Restriction>
                         <t:IsEqualTo>
                             <t:FieldURI FieldURI="item:ConversationId" />
@@ -103,102 +97,114 @@ async function getFullConversationViaEWS() {
                             </t:FieldURIOrConstant>
                         </t:IsEqualTo>
                     </m:Restriction>
+                    <m:ParentFolderIds>
+                        <t:DistinguishedFolderId Id="root" />
+                    </m:ParentFolderIds>
                 </m:FindItem>
             </soap:Body>
         </soap:Envelope>`;
 
-        // Κάνουμε το SOAP request
-        $.ajax({
-            url: ewsUrl,
-            type: 'POST',
-            data: findItemSoap,
-            contentType: 'text/xml; charset=utf-8',
-            dataType: 'xml',
-            success: function(xmlDoc) {
-                const items = [];
-                $(xmlDoc).find('Items > Item').each(function() {
-                    const itemIdVal = $(this).find('ItemId').attr('Id');
-                    const changeKey = $(this).find('ItemId').attr('ChangeKey');
-                    const subject = $(this).find('Subject').text();
-                    const dateTime = $(this).find('DateTimeReceived').text();
-                    const senderName = $(this).find('Sender Mailbox Name').text();
-                    const senderEmail = $(this).find('Sender Mailbox EmailAddress').text();
-                    // Χρειαζόμαστε και το Body - θα το πάρουμε ξεχωριστά με GetItem
-                    items.push({
-                        itemId: itemIdVal,
-                        changeKey: changeKey,
-                        subject: subject,
-                        dateTime: dateTime,
-                        senderName: senderName,
-                        senderEmail: senderEmail
-                    });
-                });
-
-                // 2. Για κάθε item, κάνουμε GetItem για να πάρουμε το πλήρες σώμα
-                const promises = items.map(item => {
-                    return new Promise((resolveItem) => {
-                        const getItemSoap = `<?xml version="1.0" encoding="utf-8"?>
-                        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-                            xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
-                            xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">
-                            <soap:Header>
-                                <t:RequestServerVersion Version="Exchange2013" />
-                            </soap:Header>
-                            <soap:Body>
-                                <m:GetItem>
-                                    <m:ItemShape>
-                                        <t:BaseShape>AllProperties</t:BaseShape>
-                                    </m:ItemShape>
-                                    <m:ItemIds>
-                                        <t:ItemId Id="${item.itemId}" ChangeKey="${item.changeKey}" />
-                                    </m:ItemIds>
-                                </m:GetItem>
-                            </soap:Body>
-                        </soap:Envelope>`;
-
-                        $.ajax({
-                            url: ewsUrl,
-                            type: 'POST',
-                            data: getItemSoap,
-                            contentType: 'text/xml; charset=utf-8',
-                            dataType: 'xml',
-                            success: function(getXml) {
-                                let bodyText = '';
-                                const bodyElem = $(getXml).find('Body');
-                                if (bodyElem.length) {
-                                    let rawBody = bodyElem.text();
-                                    // Καθαρισμός HTML → plain text
-                                    let cleanBody = rawBody
-                                        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                                        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                                        .replace(/<br\s*[\/]?>/gi, '\n')
-                                        .replace(/<\/p>/gi, '\n\n')
-                                        .replace(/<div[^>]*>/gi, '')
-                                        .replace(/<\/div>/gi, '\n')
-                                        .replace(/<[^>]+>/g, '');
-                                    const txtDiv = document.createElement('textarea');
-                                    txtDiv.innerHTML = cleanBody;
-                                    bodyText = txtDiv.value.trim();
-                                }
-                                resolveItem({
-                                    ...item,
-                                    body: bodyText
-                                });
-                            },
-                            error: () => resolveItem({ ...item, body: '' })
-                        });
-                    });
-                });
-
-                Promise.all(promises).then(fullItems => {
-                    // Ταξινόμηση κατά ημερομηνία (παλιότερο πρώτο)
-                    fullItems.sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
-                    resolve(fullItems);
-                }).catch(reject);
-            },
-            error: function(err) {
-                reject(err);
+        Office.context.mailbox.makeEwsRequestAsync(findItemSoap, (findResult) => {
+            if (findResult.status !== Office.AsyncResultStatus.Succeeded) {
+                reject(new Error("FindItem EWS failed: " + JSON.stringify(findResult.error)));
+                return;
             }
+
+            // Parse XML response
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(findResult.value, "text/xml");
+            const items = [];
+
+            // Βρίσκουμε όλα τα στοιχεία <t:Item>
+            const itemNodes = xmlDoc.getElementsByTagName("t:Item");
+            for (let i = 0; i < itemNodes.length; i++) {
+                const itemNode = itemNodes[i];
+                const itemIdElem = itemNode.getElementsByTagName("t:ItemId")[0];
+                const itemId = itemIdElem?.getAttribute("Id");
+                const changeKey = itemIdElem?.getAttribute("ChangeKey");
+                const subject = itemNode.getElementsByTagName("t:Subject")[0]?.textContent || "(Χωρίς θέμα)";
+                const dateTime = itemNode.getElementsByTagName("t:DateTimeReceived")[0]?.textContent;
+                
+                // Εξαγωγή αποστολέα
+                let senderName = "Άγνωστος";
+                const senderElem = itemNode.getElementsByTagName("t:Sender")[0];
+                if (senderElem) {
+                    const nameElem = senderElem.getElementsByTagName("t:Name")[0];
+                    if (nameElem) senderName = nameElem.textContent;
+                }
+                
+                if (itemId && changeKey) {
+                    items.push({ itemId, changeKey, subject, dateTime, senderName });
+                }
+            }
+
+            if (items.length === 0) {
+                reject(new Error("No items found in conversation"));
+                return;
+            }
+
+            // 2. Για κάθε item, παίρνουμε το πλήρες σώμα (GetItem)
+            let completed = 0;
+            const fullItems = [];
+
+            items.forEach((item, idx) => {
+                const getItemSoap = `<?xml version="1.0" encoding="utf-8"?>
+                <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                              xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                              xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                              xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                    <soap:Header>
+                        <t:RequestServerVersion Version="Exchange2013" />
+                    </soap:Header>
+                    <soap:Body>
+                        <m:GetItem>
+                            <m:ItemShape>
+                                <t:BaseShape>AllProperties</t:BaseShape>
+                            </m:ItemShape>
+                            <m:ItemIds>
+                                <t:ItemId Id="${item.itemId}" ChangeKey="${item.changeKey}" />
+                            </m:ItemIds>
+                        </m:GetItem>
+                    </soap:Body>
+                </soap:Envelope>`;
+
+                Office.context.mailbox.makeEwsRequestAsync(getItemSoap, (getResult) => {
+                    let bodyText = "";
+                    if (getResult.status === Office.AsyncResultStatus.Succeeded) {
+                        const bodyXml = parser.parseFromString(getResult.value, "text/xml");
+                        const bodyElem = bodyXml.getElementsByTagName("t:Body")[0];
+                        if (bodyElem && bodyElem.textContent) {
+                            let rawBody = bodyElem.textContent;
+                            // Καθαρισμός HTML → plain text
+                            let cleanBody = rawBody
+                                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                                .replace(/<br\s*[\/]?>/gi, '\n')
+                                .replace(/<\/p>/gi, '\n\n')
+                                .replace(/<div[^>]*>/gi, '')
+                                .replace(/<\/div>/gi, '\n')
+                                .replace(/<[^>]+>/g, '');
+                            const txtDiv = document.createElement('textarea');
+                            txtDiv.innerHTML = cleanBody;
+                            bodyText = txtDiv.value.trim();
+                        }
+                    } else {
+                        console.warn(`GetItem failed for ${item.itemId}`, getResult.error);
+                    }
+
+                    fullItems.push({
+                        ...item,
+                        body: bodyText,
+                        order: idx
+                    });
+                    completed++;
+                    if (completed === items.length) {
+                        // Ταξινόμηση κατά ημερομηνία (παλιότερο πρώτο)
+                        fullItems.sort((a, b) => new Date(a.dateTime) - new Date(b.dateTime));
+                        resolve(fullItems);
+                    }
+                });
+            });
         });
     });
 }
@@ -207,7 +213,6 @@ async function getFullConversationViaEWS() {
 function initOutlookData() {
     const item = Office.context.mailbox.item;
     
-    // Metadata (ίδια όπως πριν)
     emailContext.meta = {
         senderName: item.sender ? item.sender.displayName : "Άγνωστος",
         senderEmail: item.sender ? item.sender.emailAddress : "unknown@mail.com",
@@ -222,14 +227,12 @@ function initOutlookData() {
             console.log(`Λήφθηκαν ${conversationItems.length} μηνύματα από EWS`);
             emailContext.fullConversation = conversationItems;
             
-            // Συγχώνευση όλων των σωμάτων σε ένα κείμενο
             let fullText = conversationItems.map(msg => {
-                return `--- Μήνυμα από: ${msg.senderName || msg.senderEmail} (${new Date(msg.dateTime).toLocaleString('el-GR')}) ---\nΘέμα: ${msg.subject}\n\n${msg.body}\n\n`;
+                return `--- Μήνυμα από: ${msg.senderName} (${new Date(msg.dateTime).toLocaleString('el-GR')}) ---\nΘέμα: ${msg.subject}\n\n${msg.body}\n\n`;
             }).join('\n');
             
             emailContext.text = fullText;
             
-            // Αν το EWS απέτυχε ή δεν επέστρεψε τίποτα, κάνουμε fallback στο συνηθισμένο body
             if (!emailContext.text || emailContext.text.length < 50) {
                 console.log("EWS didn't return enough content, falling back to simple body");
                 getSimpleBody();
@@ -247,7 +250,6 @@ function initOutlookData() {
             item.body.getAsync(Office.CoercionType.Html, (result) => {
                 if (result.status === Office.AsyncResultStatus.Succeeded) {
                     let rawHtml = result.value;
-                    // Αφαίρεση display:none και άλλων περιορισμών
                     rawHtml = rawHtml.replace(/display\s*:\s*none/g, 'display:block');
                     rawHtml = rawHtml.replace(/visibility\s*:\s*hidden/g, 'visibility:visible');
                     let cleanText = rawHtml
@@ -317,13 +319,13 @@ function showManualSummaryBtn() {
     btn.onclick = () => { btn.style.display = 'none'; generateSummary(); };
 }
 
-// --- SUMMARY GENERATION (ίδια) ---
+// --- SUMMARY GENERATION ---
 async function generateSummary() {
     if (!config.apiKey) return;
     startLoadingAnim(["Διαβάζω το Thread...", "Αναλύω τη συνομιλία...", "Ετοιμάζω σύνοψη..."]);
     
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-    const prompt = `Κάνε μια πολύ σύντομη, περιεκτική σύνοψη (max 3-4 γραμμές) στα Ελληνικά για την παρακάτω συνομιλία email. Ποιος στέλνει το τελευταίο μήνυμα και τι ζητάει.\nΣυνομιλία:\n${emailContext.text.substring(0, 15000)}`; // περιορισμός length
+    const prompt = `Κάνε μια πολύ σύντομη, περιεκτική σύνοψη (max 3-4 γραμμές) στα Ελληνικά για την παρακάτω συνομιλία email. Ποιος στέλνει το τελευταίο μήνυμα και τι ζητάει.\nΣυνομιλία:\n${emailContext.text.substring(0, 15000)}`;
     
     try {
         const res = await fetch(url, {
