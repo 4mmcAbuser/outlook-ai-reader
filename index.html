@@ -206,6 +206,12 @@
         </div>
     </div>
 
-    <script src="app.js?v=9"></script>
+     <script>
+        (function() {
+            var script = document.createElement('script');
+            script.src = 'app.js?t=' + new Date().getTime();
+            document.head.appendChild(script);
+        })();
+    </script>
 </body>
 </html>
