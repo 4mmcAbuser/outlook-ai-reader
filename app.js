@@ -281,10 +281,17 @@ function finishLoading() {
 // EMAIL AUDIT & SUMMARY ENGINE (DUAL INTERFACE)
 // ----------------------
 async function generateSummaryAndAudit() {
+    if (!config.apiKey) {
+        document.getElementById('summaryText').innerText = '⚠️ Παρακαλώ προσθέστε API Key στις ρυθμίσεις.';
+        return;
+    }
+
     const prompt = `Ανάλυσε το παρακάτω email thread.
 Επίστρεψε ΑΥΣΤΗΡΑ ένα αντικείμενο JSON (χωρίς markdown κώδικα) με τα εξής πεδία:
-1. "summary": Μια σύντομη executive σύνοψη (max 4 γραμμές) στα Ελληνικά.
-2. "category": Κατηγοριοποίηση του email. Επίλεξε ΑΚΡΙΒΩΣ μία από τις εξής τιμές: "High Priority", "Internal", "Newsletter", "Spam".
+{
+  "summary": "Μια σύντομη executive σύνοψη (max 4 γραμμές) στα Ελληνικά.",
+  "category": "High Priority" ή "Internal" ή "Newsletter" ή "Spam"
+}
 
 THREAD:
 ${emailContext.text.substring(0, 8000)}`;
@@ -296,22 +303,52 @@ ${emailContext.text.substring(0, 8000)}`;
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: "application/json", temperature: 0.2 }
+                generationConfig: { 
+                    responseMimeType: "application/json", 
+                    temperature: 0.2 
+                }
             })
         });
 
+        // 1. Έλεγχος αν η HTTP απάντηση είναι επιτυχής (π.χ. 200 OK)
+        if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            throw new Error(`HTTP ${res.status}: ${errBody.error?.message || res.statusText}`);
+        }
+
         const data = await res.json();
+        
+        // 2. Έλεγχος αν το API επέστρεψε payload σφάλματος
+        if (data.error) {
+            throw new Error(`API Error: ${data.error.message}`);
+        }
+
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+        if (!raw) {
+            throw new Error("Το μοντέλο επέστρεψε κενή απάντηση ή μπλοκαρίστηκε από τα φίλτρα ασφαλείας.");
+        }
+
+        // Καθαρισμός markdown σε περίπτωση που το μοντέλο έβαλε ```json ... ```
+        raw = raw.replace(/```json/gi, '').replace(/```/gi, '').trim();
         
-        const resObj = JSON.parse(raw);
+        // 3. Προσπάθεια Parsing του JSON
+        let resObj;
+        try {
+            resObj = JSON.parse(raw);
+        } catch (jsonErr) {
+            throw new Error("Το μοντέλο δεν επέστρεψε έγκυρη δομή JSON. Απάντηση: " + raw.substring(0, 100));
+        }
         
-        // Update UI Summary Text
+        if (!resObj.summary) {
+            throw new Error("Το JSON που παρήχθη δεν περιέχει το πεδίο 'summary'.");
+        }
+        
+        // Ενημέρωση του UI με τη σύνοψη
         document.getElementById('summaryText').innerText = resObj.summary;
         
-        // Trigger Audit Updates dynamically
-        updateAuditMetrics(resObj.category);
-        renderCategoryBadge(resObj.category);
+        // Ενημέρωση των Analytics & του Category Badge
+        updateAuditMetrics(resObj.category || 'Spam');
+        renderCategoryBadge(resObj.category || 'Spam');
 
         if (resObj.summary.length > 150) {
             document.getElementById('summaryContent').classList.add('max-h-24');
@@ -319,8 +356,10 @@ ${emailContext.text.substring(0, 8000)}`;
             document.getElementById('expandSummaryBtn')?.classList.remove('hidden');
         }
     } catch (e) {
-        console.error(e);
-        document.getElementById('summaryText').innerText = '⚠️ Αδυναμία φόρτωσης έξυπνης σύνοψης.';
+        // Καταγραφή στο Console του προγράμματος περιήγησης
+        console.error("❌ Summary Generation Error:", e);
+        // Εμφάνιση του πραγματικού σφάλματος στον χρήστη για εύκολο debugging
+        document.getElementById('summaryText').innerText = `⚠️ Σφάλμα: ${e.message}`;
     }
 }
 
