@@ -9,7 +9,8 @@ let config = {
     model: 'gemma-4-31b-it',
     tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
-    customPrompt: ''
+    customPrompt: '',
+    agentMemory: '' // Agent Memory state added
 };
 
 let emailContext = {
@@ -21,6 +22,7 @@ let emailContext = {
 let isRecording = false;
 let mediaRecorder;
 let audioChunks = [];
+let currentSpeechUtterance = null; // TTS tracker
 
 // ----------------------
 // INITIALIZATION
@@ -35,6 +37,7 @@ Office.onReady((info) => {
             Office.EventType.ItemChanged,
             () => {
                 console.log("🔄 Item changed - reloading context");
+                if (window.speechSynthesis) window.speechSynthesis.cancel(); // Stop reading if mail changes
                 setTimeout(() => initOutlookData(), 300);
             }
         );
@@ -50,11 +53,12 @@ function loadSettings() {
         config = { ...config, ...JSON.parse(saved) };
     }
 
-    document.getElementById('setApiKey').value = config.apiKey;
+    document.getElementById('setApiKey').value = config.apiKey || '';
     document.getElementById('setModel').value = config.model;
     document.getElementById('setTone').value = config.tone;
     document.getElementById('setAutoSum').checked = config.autoSum;
-    document.getElementById('setCustomPrompt').value = config.customPrompt;
+    document.getElementById('setCustomPrompt').value = config.customPrompt || '';
+    document.getElementById('setAgentMemory').value = config.agentMemory || '';
 
     if (!config.apiKey) {
         navigate('view-settings');
@@ -67,6 +71,7 @@ function saveSettings() {
     config.tone = document.getElementById('setTone').value;
     config.autoSum = document.getElementById('setAutoSum').checked;
     config.customPrompt = document.getElementById('setCustomPrompt').value.trim();
+    config.agentMemory = document.getElementById('setAgentMemory').value.trim();
 
     localStorage.setItem('aiAssistConfig', JSON.stringify(config));
     navigate('view-main');
@@ -84,7 +89,7 @@ function navigate(viewId) {
 }
 
 // ----------------------
-// CLEAN HTML
+// UTILITIES
 // ----------------------
 function cleanHtmlToText(html) {
     if (!html) return '';
@@ -105,7 +110,42 @@ function cleanHtmlToText(html) {
 }
 
 // ----------------------
-// GET FULL THREAD VIA REST API
+// TEXT TO SPEECH (FOR CLIENT'S HEADPHONES)
+// ----------------------
+function speakSummary() {
+    if (!window.speechSynthesis) {
+        alert("Το σύστημά σας δεν υποστηρίζει Text-to-Speech.");
+        return;
+    }
+
+    // Toggle speech if already talking
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση`;
+        lucide.createIcons();
+        return;
+    }
+
+    const textToRead = document.getElementById('summaryText').innerText;
+    if (textToRead === 'Περιμένω ανάλυση...' || textToRead.startsWith('⚠️')) return;
+
+    currentSpeechUtterance = new SpeechSynthesisUtterance(textToRead);
+    currentSpeechUtterance.lang = 'el-GR'; // Force Greek formatting
+    currentSpeechUtterance.rate = 1.0;
+
+    currentSpeechUtterance.onend = () => {
+        document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση`;
+        lucide.createIcons();
+    };
+
+    document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-x" class="w-3.5 h-3.5 text-red-400"></i> Διακοπή`;
+    lucide.createIcons();
+    
+    window.speechSynthesis.speak(currentSpeechUtterance);
+}
+
+// ----------------------
+// FETCHING METHOD VIA OUTLOOK REST API
 // ----------------------
 async function getFullConversationViaREST() {
     return new Promise((resolve, reject) => {
@@ -113,18 +153,13 @@ async function getFullConversationViaREST() {
         const convId = item.conversationId;
 
         if (!convId) {
-            console.warn("⚠️ Δεν βρέθηκε Conversation ID");
             reject(new Error("Δεν βρέθηκε Conversation ID"));
             return;
         }
 
-        console.log(`🔍 Fetching conversation: ${convId}`);
-
-        // Ζητάμε Callback Token για REST API (isRest: true είναι ΚΡΙΣΙΜΟ)
         Office.context.mailbox.getCallbackTokenAsync({ isRest: true }, (tokenResult) => {
             if (tokenResult.status !== Office.AsyncResultStatus.Succeeded) {
-                console.error("❌ Token error:", tokenResult.error);
-                reject(new Error("Αποτυχία λήψης token. Ελέγξτε τα δικαιώματα στο Manifest."));
+                reject(new Error("Αποτυχία λήψης token."));
                 return;
             }
 
@@ -132,240 +167,237 @@ async function getFullConversationViaREST() {
             const restUrl = Office.context.mailbox.restUrl;
             
             if (!restUrl) {
-                reject(new Error("Δεν βρέθηκε REST URL - πιθανό πρόβλημα έκδοσης Office.js"));
+                reject(new Error("Δεν βρέθηκε REST URL"));
                 return;
             }
 
-            // Σωστό endpoint για Outlook REST API v2.0
             const url = `${restUrl}/v2.0/me/messages?$filter=ConversationId eq '${convId}'&$select=Sender,Subject,Body,DateTimeReceived,ConversationIndex&$orderby=DateTimeReceived asc&$top=50`;
 
             fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'application/json',
-                    'prefer': 'outlook.body-content-type="text"' // Ζητάμε plain text αντί για HTML
+                    'prefer': 'outlook.body-content-type="text"'
                 }
             })
-            .then(res => {
-                if (!res.ok) {
-                    return res.text().then(errText => {
-                        throw new Error(`REST API Error ${res.status}: ${errText.substring(0, 200)}`);
-                    });
-                }
-                return res.json();
-            })
+            .then(res => res.ok ? res.json() : reject(new Error("REST fetch failed")))
             .then(data => {
                 if (data && data.value && data.value.length > 0) {
                     const messages = data.value
-                        .filter(m => m.Body && m.Body.Content) // Φιλτράρουμε κενά
+                        .filter(m => m.Body && m.Body.Content)
                         .map(m => {
-                            let senderName = "Άγνωστος";
-                            let senderEmail = "";
-                            
-                            if (m.Sender && m.Sender.EmailAddress) {
-                                senderName = m.Sender.EmailAddress.Name || "Άγνωστος";
-                                senderEmail = m.Sender.EmailAddress.Address || "";
-                            }
-                            
-                            const bodyContent = m.Body.ContentType === 'HTML' 
-                                ? cleanHtmlToText(m.Body.Content) 
-                                : m.Body.Content;
+                            let senderName = m.Sender?.EmailAddress?.Name || "Άγνωστος";
+                            let senderEmail = m.Sender?.EmailAddress?.Address || "";
+                            const bodyContent = m.Body.ContentType === 'HTML' ? cleanHtmlToText(m.Body.Content) : m.Body.Content;
                             
                             return {
-                                sender: `${senderName}${senderEmail ? ` <${senderEmail}>` : ''}`,
+                                sender: `${senderName} <${senderEmail}>`,
                                 subject: m.Subject || "(Χωρίς Θέμα)",
                                 body: bodyContent,
-                                received: m.DateTimeReceived,
-                                conversationIndex: m.ConversationIndex || ""
+                                received: m.DateTimeReceived
                             };
                         });
-                    
-                    console.log(`✅ Loaded ${messages.length} messages from conversation`);
                     resolve(messages);
                 } else {
-                    console.warn("⚠️ Conversation found but empty");
-                    reject(new Error("Η συνομιλία βρέθηκε κενή ή χωρίς περιεχόμενο"));
+                    reject(new Error("Empty thread"));
                 }
             })
-            .catch(err => {
-                console.error("❌ REST fetch error:", err);
-                reject(err);
-            });
+            .catch(err => reject(err));
         });
     });
 }
 
-// ----------------------
-// INIT OUTLOOK DATA
-// ----------------------
 function initOutlookData() {
     const item = Office.context.mailbox.item;
-    if (!item) {
-        console.warn("⚠️ No mailbox item available");
-        return;
-    }
+    if (!item) return;
 
-    // Βασικά metadata
     emailContext.meta = {
         senderName: item.sender?.displayName || 'Άγνωστος',
         senderEmail: item.sender?.emailAddress || '',
         subject: item.subject || '(Χωρίς θέμα)',
-        receivedTime: item.dateTimeCreated ? new Date(item.dateTimeCreated).toLocaleString('el-GR') : '',
-        conversationId: item.conversationId || null
+        receivedTime: item.dateTimeCreated ? new Date(item.dateTimeCreated).toLocaleString('el-GR') : ''
     };
 
-    // Ξεκινάμε loading animation
-    startLoadingAnim([
-        "📡 Συνδέομαι με Outlook...",
-        "🔍 Αναζητώ ιστορικό συνομιλίας...",
-        "🤖 Προετοιμάζω ανάλυση..."
-    ]);
+    startLoadingAnim(["📡 Σύνδεση...", "🔍 Ανάλυση Thread...", "🤖 Κατηγοριοποίηση..."]);
 
-    // Προσπάθεια να φέρει όλο το Thread via REST API
     getFullConversationViaREST()
         .then(messages => {
             emailContext.fullConversation = messages;
-            
-            // Δημιουργούμε δομημένο κείμενο για το AI
-            const structured = messages
-                .map((m, idx) => {
-                    const dateStr = m.received ? new Date(m.received).toLocaleString('el-GR') : 'Άγνωστη';
-                    return `--- ΜΗΝΥΜΑ #${idx + 1} ---
-ΑΠΟΣΤΟΛΕΑΣ: ${m.sender}
-ΗΜΕΡΟΜΗΝΙΑ: ${dateStr}
-ΘΕΜΑ: ${m.subject}
-ΠΕΡΙΕΧΟΜΕΝΟ:
-${m.body}
-`;
-                })
-                .join("\n");
-
+            const structured = messages.map((m, idx) => `--- ΜΗΝΥΜΑ #${idx + 1} ---\nΑΠΟΣΤΟΛΕΑΣ: ${m.sender}\nΘΕΜΑ: ${m.subject}\nΠΕΡΙΕΧΟΜΕΝΟ:\n${m.body}\n`).join("\n");
             emailContext.text = structured;
-            console.log(`✅ Conversation loaded. Length: ${emailContext.text.length} chars`);
             finishLoading();
         })
-        .catch(err => {
-            console.warn("⚠️ REST API failed, using fallback:", err.message);
-            // Ενημέρωση UI για fallback
-            document.getElementById('loadingText').innerText = "⚠️ Χρήση τρέχοντος μηνύματος...";
+        .catch(() => {
             fallbackCurrentMail();
         });
 }
 
-// ----------------------
-// FALLBACK: Plan B (μόνο τρέχον μήνυμα)
-// ----------------------
 function fallbackCurrentMail() {
     const item = Office.context.mailbox.item;
     if (!item || !item.body) {
         stopLoadingAnim();
-        emailContext.text = "Δεν ήταν δυνατή η ανάγνωση του email.";
+        emailContext.text = "Σφάλμα ανάγνωσης.";
         finishLoading();
         return;
     }
-
-    item.body.getAsync(Office.CoercionType.Text, { asyncContext: { trim: true } }, (result) => {
+    item.body.getAsync(Office.CoercionType.Text, (result) => {
         stopLoadingAnim();
         if (result.status === Office.AsyncResultStatus.Succeeded) {
-            // Προσθέτουμε metadata για context
-            emailContext.text = `--- ΤΡΕΧΟΝ ΜΗΝΥΜΑ (Fallback) ---
-ΑΠΟΣΤΟΛΕΑΣ: ${emailContext.meta.senderName}
-ΘΕΜΑ: ${emailContext.meta.subject}
-ΗΜΕΡΟΜΗΝΙΑ: ${emailContext.meta.receivedTime}
-
-${result.value}
-`;
-            console.log("✅ Fallback: Loaded current message");
-            finishLoading();
-        } else {
-            console.error("❌ Fallback failed:", result.error);
-            emailContext.text = "Σφάλμα ανάγνωσης περιεχομένου.";
+            emailContext.text = `--- ΤΡΕΧΟΝ ΜΗΝΥΜΑ ---\nΑΠΟΣΤΟΛΕΑΣ: ${emailContext.meta.senderName}\nΘΕΜΑ: ${emailContext.meta.subject}\n\n${result.value}`;
             finishLoading();
         }
     });
 }
 
 // ----------------------
-// LOADING ANIMATION
+// LOADING MANAGEMENT
 // ----------------------
 let loadingInterval;
-
 function startLoadingAnim(messages) {
     const textEl = document.getElementById('loadingText');
     const overlay = document.getElementById('loadingOverlay');
-    
     if (overlay) {
         overlay.style.display = 'flex';
-        let i = 0;
-        textEl.innerText = messages[0];
+        let i = 0; textEl.innerText = messages[0];
         loadingInterval = setInterval(() => {
             i = (i + 1) % messages.length;
             textEl.innerText = messages[i];
-        }, 1400);
+        }, 1200);
     }
 }
-
 function stopLoadingAnim() {
     if (loadingInterval) clearInterval(loadingInterval);
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) overlay.style.display = 'none';
 }
-
 function finishLoading() {
     stopLoadingAnim();
     if (config.autoSum && config.apiKey && emailContext.text) {
-        generateSummary();
+        generateSummaryAndAudit();
     }
 }
 
 // ----------------------
-// SUMMARY GENERATION
+// EMAIL AUDIT & SUMMARY ENGINE (DUAL INTERFACE)
 // ----------------------
-async function generateSummary() {
-    const prompt = `Κάνε σύντομη executive σύνοψη του παρακάτω email thread (max 4 γραμμές).
-Περιέγραψε: Ποιος έστειλε το τελευταίο μήνυμα, τι ζητάει, και αν υπάρχουν εκκρεμότητες.
+async function generateSummaryAndAudit() {
+    const prompt = `Ανάλυσε το παρακάτω email thread.
+Επίστρεψε ΑΥΣΤΗΡΑ ένα αντικείμενο JSON (χωρίς markdown κώδικα) με τα εξής πεδία:
+1. "summary": Μια σύντομη executive σύνοψη (max 4 γραμμές) στα Ελληνικά.
+2. "category": Κατηγοριοποίηση του email. Επίλεξε ΑΚΡΙΒΩΣ μία από τις εξής τιμές: "High Priority", "Internal", "Newsletter", "Spam".
 
 THREAD:
-${emailContext.text.substring(0, 8000)}${emailContext.text.length > 8000 ? '...' : ''}`;
+${emailContext.text.substring(0, 8000)}`;
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
         const res = await fetch(url, {
-            method: "POST", 
+            method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.3, maxOutputTokens: 256 }
+                generationConfig: { responseMimeType: "application/json", temperature: 0.2 }
             })
         });
 
         const data = await res.json();
-        if (data.error) throw new Error(data.error.message);
+        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        const resObj = JSON.parse(raw);
+        
+        // Update UI Summary Text
+        document.getElementById('summaryText').innerText = resObj.summary;
+        
+        // Trigger Audit Updates dynamically
+        updateAuditMetrics(resObj.category);
+        renderCategoryBadge(resObj.category);
 
-        const summary = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Δεν παρήχθη σύνοψη';
-        document.getElementById('summaryText').innerText = summary;
-        
-        // Show expand button if text is long
-        const summaryEl = document.getElementById('summaryText');
-        const fadeEl = document.getElementById('summaryFade');
-        const expandBtn = document.getElementById('expandSummaryBtn');
-        
-        if (summary.length > 150) {
-            summaryEl.classList.add('max-h-24');
-            fadeEl?.classList.remove('hidden');
-            expandBtn?.classList.remove('hidden');
+        if (resObj.summary.length > 150) {
+            document.getElementById('summaryContent').classList.add('max-h-24');
+            document.getElementById('summaryFade')?.classList.remove('hidden');
+            document.getElementById('expandSummaryBtn')?.classList.remove('hidden');
         }
     } catch (e) {
-        console.error("Summary error:", e);
-        document.getElementById('summaryText').innerText = '⚠️ Σφάλμα σύνοψης: ' + e.message;
+        console.error(e);
+        document.getElementById('summaryText').innerText = '⚠️ Αδυναμία φόρτωσης έξυπνης σύνοψης.';
     }
 }
 
-// Expand summary toggle
+// Render dynamic badges based on categories
+function renderCategoryBadge(cat) {
+    const badge = document.getElementById('emailCategoryBadge');
+    badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full transition-all duration-300 ";
+    
+    switch(cat) {
+        case 'High Priority':
+            badge.innerText = '🔥 Υψηλή Προτεραιότητα';
+            badge.classList.add('bg-red-500/20', 'text-red-400');
+            break;
+        case 'Internal':
+            badge.innerText = '💼 Εσωτερικό / Εταιρικό';
+            badge.classList.add('bg-blue-500/20', 'text-blue-400');
+            break;
+        case 'Newsletter':
+            badge.innerText = '📢 Newsletter';
+            badge.classList.add('bg-yellow-500/20', 'text-yellow-400');
+            break;
+        default:
+            badge.innerText = '🗑️ Χαμηλή Σημασία';
+            badge.classList.add('bg-zinc-800', 'text-zinc-400');
+    }
+}
+
+// Log dynamic data updates locally inside storage
+function updateAuditMetrics(cat) {
+    let auditData = JSON.parse(localStorage.getItem('emailAuditStore')) || { total: 0, high: 0, internal: 0, news: 0, spam: 0 };
+    
+    auditData.total += 1;
+    if (cat === 'High Priority') auditData.high += 1;
+    else if (cat === 'Internal') auditData.internal += 1;
+    else if (cat === 'Newsletter') auditData.news += 1;
+    else auditData.spam += 1;
+
+    localStorage.setItem('emailAuditStore', JSON.stringify(auditData));
+}
+
+// ----------------------
+// AUDIT DASHBOARD RENDERING
+// ----------------------
+function openAuditDashboard() {
+    navigate('view-audit');
+    const data = JSON.parse(localStorage.getItem('emailAuditStore')) || { total: 0, high: 0, internal: 0, news: 0, spam: 0 };
+    
+    document.getElementById('auditTotal').innerText = data.total;
+    // Simple math metric estimation: 3 mins saved per processed email setup
+    document.getElementById('auditSavedTime').innerText = (data.total * 3) + 'λ';
+
+    const calcPct = (val) => data.total > 0 ? Math.round((val / data.total) * 100) : 0;
+
+    const pHigh = calcPct(data.high), pInternal = calcPct(data.internal), pNews = calcPct(data.news), pSpam = calcPct(data.spam);
+
+    document.getElementById('pct-high').innerText = pHigh + '%';
+    document.getElementById('bar-high').style.width = pHigh + '%';
+
+    document.getElementById('pct-internal').innerText = pInternal + '%';
+    document.getElementById('bar-internal').style.width = pInternal + '%';
+
+    document.getElementById('pct-news').innerText = pNews + '%';
+    document.getElementById('bar-news').style.width = pNews + '%';
+
+    document.getElementById('pct-spam').innerText = pSpam + '%';
+    document.getElementById('bar-spam').style.width = pSpam + '%';
+}
+
+function clearAuditData() {
+    localStorage.removeItem('emailAuditStore');
+    openAuditDashboard();
+}
+
+// Expand text action UI toggles
 document.getElementById('expandSummaryBtn')?.addEventListener('click', function() {
     const summaryEl = document.getElementById('summaryContent');
     const fadeEl = document.getElementById('summaryFade');
-    
     if (summaryEl.classList.contains('max-h-24')) {
         summaryEl.classList.remove('max-h-24');
         fadeEl?.classList.add('hidden');
@@ -377,36 +409,79 @@ document.getElementById('expandSummaryBtn')?.addEventListener('click', function(
     }
 });
 
-// Manual summary button
-document.getElementById('manualSummaryBtn')?.addEventListener('click', () => {
-    if (config.apiKey && emailContext.text) {
-        generateSummary();
-    } else if (!config.apiKey) {
-        alert("Προσθέστε API Key στις ρυθμίσεις");
-        navigate('view-settings');
+// ----------------------
+// GENERATE DRAFT WITH AGENTIC MEMORY
+// ----------------------
+async function generateDraft(instruction, audioObj) {
+    if (!config.apiKey) { navigate('view-settings'); return; }
+    voiceStatus.innerText = '🤖 Σκέφτομαι...';
+
+    const systemPrompt = `Είσαι Executive AI Assistant για επαγγελματική αλληλογραφία.
+Έχεις πρόσβαση στο ΠΛΗΡΕΣ ιστορικό μιας συνομιλίας (Email Thread).
+
+📧 EMAIL THREAD:
+${emailContext.text.substring(0, 20000)}
+
+👤 USER INSTRUCTION:
+${instruction}
+
+🧠 ΜΝΗΜΗ & ΠΡΟΤΙΜΗΣΕΙΣ ΧΡΗΣΤΗ (Ακολούθησέ τις πιστά):
+${config.agentMemory || 'Δεν έχουν οριστεί ειδικές προτιμήσεις.'}
+
+🎯 ΚΑΘΗΚΟΝ:
+Απάντησε ΑΥΣΤΗΡΑ με JSON (χωρίς markdown):
+{
+ "intent": "draft" ή "question",
+ "content": "Το περιεχόμενο απάντησης"
+}
+
+📝 ΚΑΝΟΝΕΣ:
+• Αν intent="draft": Γράψε ΕΤΟΙΜΟ επαγγελματικό email απαντώντας στο thread με τόνο: ${config.tone}.
+• ΠΡΟΣΘΕΤΗ ΟΔΗΓΙΑ: ${config.customPrompt || 'Καμία.'}`;
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
+        const parts = [{ text: systemPrompt }];
+        if (audioObj?.data) parts.push({ inlineData: { mimeType: audioObj.mimeType, data: audioObj.data } });
+
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: { responseMimeType: "application/json", temperature: 0.3 }
+            })
+        });
+
+        const data = await res.json();
+        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(raw);
+
+        if (parsed.intent === 'question') {
+            document.getElementById('answerText').innerText = parsed.content;
+            navigate('view-answer');
+        } else {
+            document.getElementById('draftTextarea').value = parsed.content;
+            navigate('view-draft');
+        }
+        voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
+    } catch (e) {
+        alert("Σφάλμα μηχανής AI: " + e.message);
+        voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
     }
-});
+}
 
 // ----------------------
-// QUICK ACTIONS & TWEAKS
+// CORE INTERACTION EVENT BINDINGS
 // ----------------------
 function handleQuickAction(actionType) {
-    if (!config.apiKey) { 
-        alert("Προσθέστε Gemini API Key στις ρυθμίσεις πρώτα"); 
-        navigate('view-settings');
-        return; 
-    }
     generateDraft(actionType, null);
 }
 
 document.getElementById('sendTextBtn').onclick = () => {
     const txt = document.getElementById('textPrompt').value.trim();
     if (!txt) return;
-    if (!config.apiKey) {
-        alert("Προσθέστε API Key πρώτα");
-        navigate('view-settings');
-        return;
-    }
     document.getElementById('textPrompt').value = '';
     generateDraft(txt, null);
 };
@@ -420,220 +495,71 @@ document.getElementById('tweakBtn').onclick = () => {
 };
 
 // ----------------------
-// VOICE RECORDING
+// VOICE CONTROLS
 // ----------------------
 const voiceBtn = document.getElementById('voiceBtn');
 const voiceStatus = document.getElementById('voiceStatus');
 
 voiceBtn.onclick = () => {
-    if (!config.apiKey) { 
-        alert("Προσθέστε Gemini API Key στις ρυθμίσεις"); 
-        navigate('view-settings');
-        return; 
-    }
-    if (isRecording) { 
-        stopRecording(); 
-        return; 
-    }
-
-    // Request microphone permission via Office API if available
-    if (Office.context.mailbox && Office.devicePermission) {
-        Office.devicePermission.requestPermissionsAsync([Office.DevicePermissionType.microphone], (res) => {
-            if (res.status === Office.AsyncResultStatus.Failed) {
-                alert("❌ Η πρόσβαση στο μικρόφωνο απορρίφθηκε. Ελέγξτε τις ρυθμίσεις απορρήτου.");
-                return;
-            }
-            // If permission already granted (res.value === true), reload to apply
-            if (res.value) {
-                window.location.reload(); 
-            } else {
-                startRecording();
-            }
-        });
-    } else {
-        // Fallback to browser API
-        startRecording();
-    }
+    if (isRecording) { stopRecording(); return; }
+    startRecording();
 };
 
 function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         audioChunks = [];
-        
-        mediaRecorder.ondataavailable = e => { 
-            if (e.data.size > 0) audioChunks.push(e.data); 
-        };
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
         
         mediaRecorder.onstop = () => {
             voiceStatus.innerText = '🔄 Επεξεργασία ήχου...';
             const blob = new Blob(audioChunks, { type: 'audio/webm' });
             const reader = new FileReader();
-            
             reader.readAsDataURL(blob);
             reader.onloadend = () => {
                 const base64 = reader.result.split(',')[1];
-                generateDraft('🎤 Φωνητική εντολή χρήστη (δείτε το audio attachment)', { 
-                    data: base64, 
-                    mimeType: 'audio/webm' 
-                });
+                generateDraft('🎤 Φωνητική εντολή χρήστη', { data: base64, mimeType: 'audio/webm' });
             };
         };
 
-        mediaRecorder.start(1000); // chunk every second for reliability
+        mediaRecorder.start(1000);
         isRecording = true;
-        
-        // UI updates
-        voiceBtn.classList.remove('siri-idle');
-        voiceBtn.classList.add('siri-listening');
+        voiceBtn.className = "w-24 h-24 rounded-full siri-listening flex items-center justify-center text-primary cursor-pointer border border-border";
         voiceBtn.innerHTML = `<i data-lucide="square" class="w-8 h-8 text-white"></i>`;
         lucide.createIcons();
         voiceStatus.innerText = '🔴 Καταγραφή... Μιλήστε τώρα';
-        
-    }).catch(err => {
-        console.error("🎤 Mic error:", err);
-        voiceStatus.innerText = '❌ Σφάλμα μικροφώνου: ' + (err.message || 'Άγνωστο σφάλμα');
-    });
+    }).catch(() => { voiceStatus.innerText = '❌ Σφάλμα μικροφώνου'; });
 }
 
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-        // Stop all tracks to release mic
         mediaRecorder.stream.getTracks().forEach(track => track.stop());
     }
     isRecording = false;
-    
-    voiceBtn.classList.remove('siri-listening');
-    voiceBtn.classList.add('siri-idle');
+    voiceBtn.className = "w-24 h-24 rounded-full siri-idle flex items-center justify-center text-primary cursor-pointer border border-border";
     voiceBtn.innerHTML = `<i data-lucide="mic" class="w-8 h-8 opacity-70"></i>`;
     lucide.createIcons();
     voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
 }
 
 // ----------------------
-// GENERATE DRAFT (AI ENGINE)
-// ----------------------
-async function generateDraft(instruction, audioObj) {
-    if (!config.apiKey) {
-        alert("Προσθέστε API Key πρώτα");
-        navigate('view-settings');
-        return;
-    }
-
-    voiceStatus.innerText = '🤖 Σκέφτομαι...';
-
-    // Truncate context if too long (Gemini limit ~32k tokens, but be safe)
-    const contextText = emailContext.text.length > 25000 
-        ? emailContext.text.substring(0, 25000) + '\n\n[...περιορισμένο λόγω μήκους...]' 
-        : emailContext.text;
-
-    const systemPrompt = `Είσαι Executive AI Assistant για επαγγελματική αλληλογραφία.
-Έχεις πρόσβαση στο ΠΛΗΡΕΣ ιστορικό μιας συνομιλίας (Email Thread).
-Τα μηνύματα είναι χωρισμένα με "--- ΜΗΝΥΜΑ #Χ ---". Το τελευταίο χρονολογικά βρίσκεται στο τέλος.
-
-📧 EMAIL THREAD:
-${contextText}
-
-👤 USER INSTRUCTION:
-${instruction}
-
-🎯 ΚΑΘΗΚΟΝ:
-1. Κατάλαβε αν ο χρήστης ζητάει να ΓΡΑΨΕΙΣ EMAIL απάντησης (π.χ. "απάντα", "ευχαρίστησέ τον") 
-   ή αν κάνει ΕΡΩΤΗΣΗ/ΣΥΖΗΤΗΣΗ για το thread (π.χ. "τι λέει εδώ;", "ποιος είναι;").
-2. Απάντησε ΑΥΣΤΗΡΑ με JSON (χωρίς markdown, χωρίς εξηγήσεις):
-{
- "intent": "draft" ή "question",
- "content": "Το κείμενό σου"
-}
-
-📝 ΚΑΝΟΝΕΣ:
-• Αν intent="draft": Γράψε ΕΤΟΙΜΟ επαγγελματικό email ΑΠΑΝΤΩΝΤΑΣ στο ΤΕΛΕΥΤΑΙΟ μήνυμα του thread. 
-  Χρησιμοποίησε τόνο: ${config.tone}. Μην συμπεριλάβεις υπογραφή εκτός αν ζητηθεί.
-• Αν intent="question": Απάντα ξεκάθαρα στην ερώτηση σε μορφή κειμένου (όχι email).
-• Χρησιμοποίησε Ελληνικά εκτός αν το thread είναι σε άλλη γλώσσα.
-${config.customPrompt ? `\n• ΠΡΟΣΘΕΤΗ ΟΔΗΓΙΑ: ${config.customPrompt}` : ''}`;
-
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-        
-        const parts = [{ text: systemPrompt }];
-        if (audioObj?.data) {
-            parts.push({ 
-                inlineData: { 
-                    mimeType: audioObj.mimeType || 'audio/webm', 
-                    data: audioObj.data 
-                } 
-            });
-        }
-
-        const res = await fetch(url, {
-            method: "POST", 
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{ parts }],
-                generationConfig: { 
-                    responseMimeType: "application/json",
-                    temperature: 0.2,
-                    maxOutputTokens: 2048
-                }
-            })
-        });
-
-        const data = await res.json();
-        
-        if (data.error) {
-            throw new Error(data.error.message || 'Unknown API error');
-        }
-
-        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (!raw) throw new Error("Κενή απάντηση από το AI");
-        
-        // Clean markdown if present
-        raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-        
-        const parsed = JSON.parse(raw);
-
-        if (parsed.intent === 'question') {
-            document.getElementById('answerText').innerText = parsed.content;
-            navigate('view-answer');
-        } else {
-            document.getElementById('draftTextarea').value = parsed.content;
-            navigate('view-draft');
-        }
-
-        voiceStatus.innerText = '✅ Ολοκληρώθηκε!';
-        
-    } catch (e) {
-        console.error("🤖 AI Error:", e);
-        alert(`⚠️ Σφάλμα AI: ${e.message}\n\nΕλέγξτε:\n• Έγκυρο API Key\n• Σταθερή σύνδεση\n• Μήκος συνομιλίας`);
-        voiceStatus.innerText = '❌ Σφάλμα - Δοκιμάστε ξανά';
-    }
-}
-
-// ----------------------
-// INSERT TO OUTLOOK
+// INSERT COMPONENT TO OUTLOOK
 // ----------------------
 document.getElementById('insertOutlookBtn').onclick = () => {
     const finalTxt = document.getElementById('draftTextarea').value;
-    if (!finalTxt.trim()) {
-        alert("Το draft είναι κενό");
-        return;
-    }
+    if (!finalTxt.trim()) return;
     
     Office.context.mailbox.item.displayReplyForm(finalTxt, (asyncResult) => {
         if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
-            console.log("✅ Reply form opened");
             document.getElementById('draftTextarea').value = '';
             navigate('view-main');
         } else {
-            console.error("❌ displayReplyForm error:", asyncResult.error);
-            alert("⚠️ Δεν ήταν δυνατό το άνοιγμα της φόρμας απάντησης. Δοκιμάστε χειροκίνητα αντιγραφή-επικόλληση.");
+            alert("Σφάλμα αυτόματης επικόλλησης.");
         }
     });
 };
 
-// Cancel draft button
 document.getElementById('cancelDraftBtn')?.addEventListener('click', () => {
     document.getElementById('draftTextarea').value = '';
     navigate('view-main');
