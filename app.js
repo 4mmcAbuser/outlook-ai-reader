@@ -1,10 +1,21 @@
 /**
  * AI Executive Assistant - Outlook Add-on Engine
- * Performance Profile: Gemini 3.1 Flash-Lite / 2.5 Flash Optimizedd
+ * Performance Profile: Gemini 3.1 Flash-Lite / 2.5 Flash Optimized
  * Design: Dual-Row Contextual Buttons & Native Outlook Calendar Integration
  */
 
 lucide.createIcons();
+
+// Helper to set HTML and render Lucide icons
+function setHtmlWithIcons(el, html) {
+    if (typeof el === 'string') el = document.getElementById(el);
+    if (el) {
+        el.innerHTML = html;
+        if (typeof lucide !== 'undefined' && lucide.createIcons) {
+            lucide.createIcons();
+        }
+    }
+}
 
 // -------------------------------------------------------------------------
 // 1. GLOBAL STATE & CONFIGURATION
@@ -46,7 +57,7 @@ Office.onReady((info) => {
         Office.context.mailbox.addHandlerAsync(
             Office.EventType.ItemChanged,
             () => {
-                console.log("🔄 [System] Item changed - Re-initializing state context.");
+                console.log("[System] Item changed - Re-initializing state context.");
                 if (window.speechSynthesis) window.speechSynthesis.cancel(); 
                 setTimeout(() => initOutlookData(), 1000); 
             }
@@ -173,7 +184,7 @@ function safeJsonParse(rawStr) {
 // ----------------------
 function speakSummary() {
     if (!window.speechSynthesis) {
-        document.getElementById('voiceStatus').innerText = "⚠️ Το σύστημα δεν υποστηρίζει Text-to-Speech.";
+        setHtmlWithIcons('voiceStatus', '<i data-lucide="alert-triangle" class="w-4 h-4 inline-block mr-1"></i> Το σύστημα δεν υποστηρίζει Text-to-Speech.');
         return;
     }
 
@@ -185,7 +196,7 @@ function speakSummary() {
     }
 
     const textToRead = document.getElementById('summaryText').innerText;
-    if (textToRead === 'Περιμένω ανάλυση...' || textToRead.startsWith('⚠️') || textToRead.startsWith('⏳') || textToRead.includes('Αδυναμία')) return;
+    if (textToRead === 'Περιμένω ανάλυση...' || textToRead.includes('Εκκρεμεί') || textToRead.includes('Αδυναμία') || textToRead.includes('Σφάλμα')) return;
 
     currentSpeechUtterance = new SpeechSynthesisUtterance(textToRead);
     currentSpeechUtterance.lang = 'el-GR'; 
@@ -196,8 +207,7 @@ function speakSummary() {
         lucide.createIcons();
     };
 
-    document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-x" class="w-3.5 h-3.5 text-red-400"></i> Διακοπή`;
-    lucide.createIcons();
+    setHtmlWithIcons('ttsBtn', `<i data-lucide="volume-x" class="w-3.5 h-3.5 text-red-400"></i> Διακοπή`);
     
     window.speechSynthesis.speak(currentSpeechUtterance);
 }
@@ -295,8 +305,12 @@ function initOutlookData() {
         receivedTime: item.dateTimeCreated ? new Date(item.dateTimeCreated).toLocaleString('el-GR') : ''
     };
 
-    document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία'; 
-    startLoadingAnim(["📡 Συγχρονισμός...", "🔍 Ανάλυση Ιστορικού...", "🤖 Email Audit..."]);
+    setHtmlWithIcons('voiceStatus', 'Κάντε κλικ για ομιλία'); 
+    startLoadingAnim([
+        '<i data-lucide="satellite-dish" class="w-4 h-4 inline-block mr-1"></i> Συγχρονισμός...', 
+        '<i data-lucide="scan-search" class="w-4 h-4 inline-block mr-1"></i> Ανάλυση Ιστορικού...', 
+        '<i data-lucide="bot" class="w-4 h-4 inline-block mr-1"></i> Email Audit...'
+    ]);
 
     getFullConversationViaREST()
         .then(messages => {
@@ -345,10 +359,13 @@ function startLoadingAnim(messages) {
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) {
         overlay.style.display = 'flex';
-        let i = 0; textEl.innerText = messages[0];
+        let i = 0; 
+        textEl.innerHTML = messages[0]; 
+        lucide.createIcons();
         loadingInterval = setInterval(() => {
             i = (i + 1) % messages.length;
-            textEl.innerText = messages[i];
+            textEl.innerHTML = messages[i];
+            lucide.createIcons();
         }, 1200);
     }
 }
@@ -369,7 +386,7 @@ function finishLoading() {
 // -------------------------------------------------------------------------
 async function generateSummaryAndAudit() {
     if (!config.apiKey) {
-        document.getElementById('summaryText').innerText = '⚠️ Εκκρεμεί το API Key στις ρυθμίσεις.';
+        setHtmlWithIcons('summaryText', '<i data-lucide="alert-triangle" class="w-4 h-4 inline-block mr-1"></i> Εκκρεμεί το API Key στις ρυθμίσεις.');
         return;
     }
 
@@ -449,7 +466,7 @@ ${emailContext.text.substring(0, 8000)}`;
             }, 300);
         }
 
-        // 🚀 FIX: Defensive DOM Layout Measurement
+        // FIX: Defensive DOM Layout Measurement
         // Επιτρέπουμε στο κείμενο να σχεδιαστεί και μετράμε αν ξεπερνάει τα 96px (max-h-24)
         setTimeout(() => {
             const summaryContent = document.getElementById('summaryContent');
@@ -469,9 +486,9 @@ ${emailContext.text.substring(0, 8000)}`;
         }, 50);
 
     } catch (e) {
-        console.error("❌ Summary Error:", e);
-        document.getElementById('summaryText').innerText = 'Αδυναμία αυτόματης φόρτωσης σύνοψης.';
-        document.getElementById('voiceStatus').innerText = `⚠️ Σφάλμα Σύνοψης: ${e.message}`;
+        console.error("Summary Error:", e);
+        setHtmlWithIcons('summaryText', 'Αδυναμία αυτόματης φόρτωσης σύνοψης.');
+        setHtmlWithIcons('voiceStatus', `<i data-lucide="alert-triangle" class="w-4 h-4 inline-block mr-1"></i> Σφάλμα Σύνοψης: ${e.message}`);
     }
 }
 
@@ -482,26 +499,27 @@ function renderEnhancedBadges(resObj) {
     
     switch(resObj.category) {
         case 'High Priority':
-            radarText = '🔥 Υψηλή Προτεραιότητα';
+            radarText = '<i data-lucide="flame" class="w-3 h-3"></i> Υψηλή Προτεραιότητα';
             badge.classList.add('bg-red-500/20', 'text-red-400');
             break;
         case 'Internal':
-            radarText = '💼 Εσωτερικό / Εταιρικό';
+            radarText = '<i data-lucide="briefcase" class="w-3 h-3"></i> Εσωτερικό / Εταιρικό';
             badge.classList.add('bg-blue-500/20', 'text-blue-400');
             break;
         case 'Newsletter':
-            radarText = '📢 Newsletter';
+            radarText = '<i data-lucide="megaphone" class="w-3 h-3"></i> Newsletter';
             badge.classList.add('bg-yellow-500/20', 'text-yellow-400');
             break;
         default:
-            radarText = '🗑️ Χαμηλή Σημασία';
+            radarText = '<i data-lucide="trash-2" class="w-3 h-3"></i> Χαμηλή Σημασία';
             badge.classList.add('bg-zinc-800', 'text-zinc-400');
     }
 
-    if (resObj.urgency === 'High' && resObj.category !== 'Spam') radarText += ' | 🚨 ΕΠΕΙΓΟΝ';
-    if (resObj.sentiment === 'Δυσαρεστημένος') radarText += ' | 😡 Δυσαρέσκεια';
+    if (resObj.urgency === 'High' && resObj.category !== 'Spam') radarText += ' | <i data-lucide="siren" class="w-3 h-3"></i> ΕΠΕΙΓΟΝ';
+    if (resObj.sentiment === 'Δυσαρεστημένος') radarText += ' | <i data-lucide="frown" class="w-3 h-3"></i> Δυσαρέσκεια';
     
-    badge.innerText = radarText;
+    badge.innerHTML = radarText;
+    lucide.createIcons();
 }
 
 function renderDynamicSmartButtons(buttonsArray, calendarEventObj) {
@@ -517,16 +535,16 @@ function renderDynamicSmartButtons(buttonsArray, calendarEventObj) {
     safeButtons.forEach(btn => {
         const nativeBtn = document.createElement('button');
         nativeBtn.className = "flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1";
-        nativeBtn.innerText = "✨ " + btn.label;
+        nativeBtn.innerHTML = '<i data-lucide="sparkles" class="w-3 h-3"></i> ' + btn.label;
         nativeBtn.onclick = () => handleQuickAction(btn.reply_instruction);
         container.appendChild(nativeBtn);
     });
 
-    // 2. 📅 NATIVE OUTLOOK CALENDAR INTEGRATION
+    // 2. NATIVE OUTLOOK CALENDAR INTEGRATION
     if (calendarEventObj && calendarEventObj.has_meeting === true) {
         const calBtn = document.createElement('button');
         calBtn.className = "flex-shrink-0 bg-green-600/20 hover:bg-green-600/40 border border-green-500/40 text-xs py-1.5 px-3 rounded-full transition-colors text-green-400 font-bold shadow-sm flex items-center gap-1";
-        calBtn.innerHTML = `📅 + Ημερολόγιο (${calendarEventObj.label_text || 'Ραντεβού'})`;
+        calBtn.innerHTML = `<i data-lucide="calendar" class="w-3 h-3"></i> + Ημερολόγιο (${calendarEventObj.label_text || 'Ραντεβού'})`;
         
         calBtn.onclick = () => {
             let startDate = calendarEventObj.start_iso ? new Date(calendarEventObj.start_iso) : new Date();
@@ -546,6 +564,8 @@ function renderDynamicSmartButtons(buttonsArray, calendarEventObj) {
 
     if (container.children.length === 0) {
         container.classList.add('hidden');
+    } else {
+        lucide.createIcons();
     }
 }
 
@@ -584,7 +604,7 @@ function clearAuditData() {
     openAuditDashboard();
 }
 
-// 🚀 FIX: Καθαρό, λειτουργικό Toggle χωρίς syntax crashes
+// FIX: Καθαρό, λειτουργικό Toggle χωρίς syntax crashes
 document.getElementById('expandSummaryBtn')?.addEventListener('click', function() {
     const summaryEl = document.getElementById('summaryContent');
     const fadeEl = document.getElementById('summaryFade');
@@ -608,11 +628,11 @@ async function generateDraft(instruction, audioObj) {
     if (!config.apiKey) { navigate('view-settings'); return; }
 
     if (!emailContext.text || emailContext.text.trim() === "" || emailContext.text.includes("Σφάλμα ανάγνωσης.")) {
-        document.getElementById('voiceStatus').innerText = "⏳ Το email φορτώνει ακόμα... Ξαναπροσπαθήστε.";
+        setHtmlWithIcons('voiceStatus', '<i data-lucide="hourglass" class="w-4 h-4 inline-block mr-1"></i> Το email φορτώνει ακόμα... Ξαναπροσπαθήστε.');
         return;
     }
 
-    document.getElementById('voiceStatus').innerText = '🤖 Σκέφτομαι...';
+    setHtmlWithIcons('voiceStatus', '<i data-lucide="bot" class="w-4 h-4 inline-block mr-1"></i> Σκέφτομαι...');
 
     const optimizedContext = emailContext.text.length > 7000
         ? emailContext.text.substring(0, 7000)
@@ -680,10 +700,10 @@ ${instruction}`;
             document.getElementById('draftTextarea').value = parsed.content;
             navigate('view-draft');
         }
-        document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία';
+        setHtmlWithIcons('voiceStatus', 'Κάντε κλικ για ομιλία');
     } catch (e) {
-        console.error("🤖 AI Draft Error:", e);
-        document.getElementById('voiceStatus').innerText = '❌ Σφάλμα AI: ' + e.message;
+        console.error("AI Draft Error:", e);
+        setHtmlWithIcons('voiceStatus', '<i data-lucide="x-circle" class="w-4 h-4 inline-block mr-1"></i> Σφάλμα AI: ' + e.message);
     }
 }
 
@@ -772,11 +792,11 @@ voiceBtn.onclick = () => {
         Office.devicePermission.requestPermissionsAsync([Office.DevicePermissionType.microphone], (asyncResult) => {
             if (asyncResult.status === Office.AsyncResultStatus.Failed) {
                 console.error("Microphone permission denied.");
-                voiceStatus.innerText = "❌ Αποτυχία πρόσβασης στο μικρόφωνο";
+                setHtmlWithIcons(voiceStatus, '<i data-lucide="mic-off" class="w-4 h-4 inline-block mr-1"></i> Αποτυχία πρόσβασης στο μικρόφωνο');
             } else {
                 if (asyncResult.value) {
                     console.log("Permission granted. Reloading iframe to apply permissions...");
-                    voiceStatus.innerText = "🔄 Γίνεται επανεκκίνηση...";
+                    setHtmlWithIcons(voiceStatus, '<i data-lucide="refresh-cw" class="w-4 h-4 inline-block mr-1"></i> Γίνεται επανεκκίνηση...');
                     window.location.reload();
                 } else {
                     console.log("Permission already granted.");
@@ -842,7 +862,7 @@ function startRecording() {
                 audioContext.close();
             }
 
-            voiceStatus.innerText = '🔄 Επεξεργασία...';
+            setHtmlWithIcons(voiceStatus, '<i data-lucide="loader" class="w-4 h-4 inline-block mr-1 animate-spin"></i> Επεξεργασία...');
 
             if (recognitionText.trim().length > 0) {
                 const draftView = document.getElementById('view-draft');
@@ -863,7 +883,7 @@ function startRecording() {
                         const currentDraft = document.getElementById('draftTextarea').value;
                         generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με την ηχογραφημένη εντολή. ΠΑΛΙΟ EMAIL:\n${currentDraft}`, { data: base64, mimeType: 'audio/webm' });
                     } else {
-                        generateDraft('🎤 Φωνητική εντολή χρήστη', { data: base64, mimeType: 'audio/webm' });
+                        generateDraft('[Φωνητική εντολή χρήστη]', { data: base64, mimeType: 'audio/webm' });
                     }
                 };
             }
@@ -875,9 +895,9 @@ function startRecording() {
         voiceBtn.className = "w-24 h-24 rounded-full siri-listening flex items-center justify-center text-primary cursor-pointer border border-border";
         voiceBtn.innerHTML = `<i data-lucide="square" class="w-8 h-8 text-white"></i>`;
         lucide.createIcons();
-        voiceStatus.innerText = '🔴 Ακούω... Μιλήστε τώρα';
+        setHtmlWithIcons(voiceStatus, '<i data-lucide="circle" class="w-3 h-3 fill-red-500 text-red-500 inline-block mr-1"></i> Ακούω... Μιλήστε τώρα');
     }).catch(() => { 
-        voiceStatus.innerText = '❌ Σφάλμα μικροφώνου'; 
+        setHtmlWithIcons(voiceStatus, '<i data-lucide="x-circle" class="w-4 h-4 inline-block mr-1"></i> Σφάλμα μικροφώνου'); 
     });
 }
 
@@ -897,7 +917,7 @@ function stopRecording() {
     voiceBtn.className = "w-24 h-24 rounded-full siri-idle flex items-center justify-center text-primary cursor-pointer border border-border";
     voiceBtn.innerHTML = `<i data-lucide="mic" class="w-8 h-8 opacity-70"></i>`;
     lucide.createIcons();
-    voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
+    setHtmlWithIcons(voiceStatus, 'Κάντε κλικ για ομιλία');
 }
 
 function drawWaveform() {
@@ -965,7 +985,7 @@ document.getElementById('insertOutlookBtn').onclick = () => {
             navigate('view-main');
         } else {
             console.error(asyncResult.error);
-            voiceStatus.innerText = "⚠️ Αποτυχία αυτόματης επικόλλησης.";
+            setHtmlWithIcons(voiceStatus, '<i data-lucide="alert-triangle" class="w-4 h-4 inline-block mr-1"></i> Αποτυχία αυτόματης επικόλλησης.');
         }
     });
 };
