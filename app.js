@@ -768,14 +768,20 @@ voiceBtn.onclick = () => {
     if (isRecording) { stopRecording(); return; }
     
     // Request permission from the Outlook host environment to access the microphone inside the iframe
-    if (typeof Office !== 'undefined' && Office.context && Office.context.requirements.isSetSupported('DevicePermission', '1.1') && Office.devicePermission) {
+    if (typeof Office !== 'undefined' && Office.context && Office.context.mailbox && Office.context.mailbox.diagnostics && Office.context.mailbox.diagnostics.hostName === "OutlookWebApp" && Office.devicePermission) {
         Office.devicePermission.requestPermissionsAsync([Office.DevicePermissionType.microphone], (asyncResult) => {
             if (asyncResult.status === Office.AsyncResultStatus.Failed) {
-                console.error("Microphone permission denied: " + asyncResult.error.message);
+                console.error("Microphone permission denied.");
                 voiceStatus.innerText = "❌ Αποτυχία πρόσβασης στο μικρόφωνο";
             } else {
-                console.log("Microphone permission verified.");
-                startRecording();
+                if (asyncResult.value) {
+                    console.log("Permission granted. Reloading iframe to apply permissions...");
+                    voiceStatus.innerText = "🔄 Γίνεται επανεκκίνηση...";
+                    window.location.reload();
+                } else {
+                    console.log("Permission already granted.");
+                    startRecording();
+                }
             }
         });
     } else {
