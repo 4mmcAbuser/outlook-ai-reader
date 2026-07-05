@@ -1,12 +1,18 @@
-// Initialize Lucide Icons
+/**
+ * AI Executive Assistant - Outlook Add-on Engine
+ * Architecture: Modular, Event-Driven, Defensive DOM Manipulation
+ * Core Model: Gemini 2.5 Flash / Gemini 3.1 Flash-Lite Optimization
+ */
+
+// Initialize Lucide Icons globally
 lucide.createIcons();
 
-// ----------------------
-// STATE MANAGEMENT
-// ----------------------
+// -------------------------------------------------------------------------
+// 1. GLOBAL STATE & CONFIGURATION
+// -------------------------------------------------------------------------
 let config = {
     apiKey: '',
-    model: 'gemini-3.1-flash-lite', 
+    model: 'gemini-2.5-flash', 
     tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
     customPrompt: '',
@@ -25,31 +31,32 @@ let emailContext = {
 let isRecording = false;
 let mediaRecorder;
 let audioChunks = [];
-let currentSpeechUtterance = null; // TTS tracker
+let currentSpeechUtterance = null; 
 
-// ----------------------
-// INITIALIZATION
-// ----------------------
+// -------------------------------------------------------------------------
+// 2. INITIALIZATION & OUTLOOK EVENT BINDINGS
+// -------------------------------------------------------------------------
 Office.onReady((info) => {
     loadSettings();
 
     if (info.host === Office.HostType.Outlook) {
         initOutlookData();
 
+        // Event listener για αλλαγή επιλεγμένου email από τον χρήστη
         Office.context.mailbox.addHandlerAsync(
             Office.EventType.ItemChanged,
             () => {
-                console.log("🔄 Item changed - reloading context");
+                console.log("🔄 [System] Item changed - Re-initializing state context.");
                 if (window.speechSynthesis) window.speechSynthesis.cancel(); 
-                setTimeout(() => initOutlookData(), 1000);
+                setTimeout(() => initOutlookData(), 1000); // 1s Latency cooldown για το Outlook Live
             }
         );
     }
 });
 
-// ----------------------
-// SETTINGS
-// ----------------------
+// -------------------------------------------------------------------------
+// 3. STORAGE & CONFIGURATION MANAGEMENT
+// -------------------------------------------------------------------------
 function loadSettings() {
     const saved = localStorage.getItem('aiAssistConfig');
     if (saved) {
@@ -71,7 +78,7 @@ function loadSettings() {
 function saveSettings() {
     config.apiKey = document.getElementById('setApiKey').value.trim();
     config.model = document.getElementById('setModel').value;
-    config.tone = config.tone = document.getElementById('setTone').value;
+    config.tone = document.getElementById('setTone').value;
     config.autoSum = document.getElementById('setAutoSum').checked;
     config.customPrompt = document.getElementById('setCustomPrompt').value.trim();
     config.agentMemory = document.getElementById('setAgentMemory').value.trim();
@@ -91,9 +98,9 @@ function navigate(viewId) {
     document.getElementById(viewId).classList.add('view-active');
 }
 
-// ----------------------
-// UTILITIES & BULLETPROOF JSON PARSER
-// ----------------------
+// -------------------------------------------------------------------------
+// 4. CORE UTILITIES & BULLETPROOF JSON PARSER
+// -------------------------------------------------------------------------
 function cleanHtmlToText(html) {
     if (!html) return '';
     return html
@@ -112,18 +119,27 @@ function cleanHtmlToText(html) {
         .trim();
 }
 
+/**
+ * Καθαρίζει και απομονώνει αυστηρά δομημένα JSON blocks 
+ * Παρέχει αυτόματο text-fallback αν το μοντέλο αποτύχει να τηρήσει το schema.
+ */
 function safeJsonParse(rawStr) {
-    if (!rawStr) throw new Error("Κενή απάντηση από το AI.");
+    if (!rawStr) throw new Error("Empty token response from AI cluster.");
     
     let cleanStr = rawStr.replace(/```json/gi, '').replace(/```/gi, '').trim();
     let start = cleanStr.indexOf('{');
     
     if (start === -1) {
+        console.warn("⚠️ [Parser] Strict JSON boundary missing. Activating raw text encapsulation fallback.");
         return {
             summary: cleanStr,
             content: cleanStr, 
             intent: "draft",
-            category: "High Priority"
+            category: "High Priority",
+            urgency: "High",
+            sentiment: "Ουδέτερος",
+            action_items: [],
+            smart_buttons: []
         };
     }
     
@@ -151,19 +167,14 @@ function safeJsonParse(rawStr) {
     
     const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-        return {
-            summary: cleanStr,
-            content: cleanStr,
-            intent: "draft",
-            category: "High Priority"
-        };
+        return { summary: cleanStr, content: cleanStr, intent: "draft", action_items: [], smart_buttons: [] };
     }
     return JSON.parse(jsonMatch[0]);
 }
 
-// ----------------------
-// TEXT TO SPEECH
-// ----------------------
+// -------------------------------------------------------------------------
+// 5. TEXT TO SPEECH (AUDIOBOOK MODE)
+// -------------------------------------------------------------------------
 function speakSummary() {
     if (!window.speechSynthesis) {
         document.getElementById('voiceStatus').innerText = "⚠️ Το σύστημα δεν υποστηρίζει Text-to-Speech.";
@@ -182,7 +193,7 @@ function speakSummary() {
 
     currentSpeechUtterance = new SpeechSynthesisUtterance(textToRead);
     currentSpeechUtterance.lang = 'el-GR'; 
-    currentSpeechUtterance.rate = 1.0;
+    currentSpeechUtterance.rate = 0.95; // Ελαφρώς πιο αργό για premium/executive αίσθηση
 
     currentSpeechUtterance.onend = () => {
         document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση`;
@@ -195,22 +206,22 @@ function speakSummary() {
     window.speechSynthesis.speak(currentSpeechUtterance);
 }
 
-// ----------------------
-// FETCHING METHOD VIA OUTLOOK REST API
-// ----------------------
+// -------------------------------------------------------------------------
+// 6. OUTLOOK DATA INGESTION (REST API & FALLBACKS)
+// -------------------------------------------------------------------------
 async function getFullConversationViaREST() {
     return new Promise((resolve, reject) => {
         const item = Office.context.mailbox.item;
         const convId = item.conversationId;
 
         if (!convId) {
-            reject(new Error("Δεν βρέθηκε Conversation ID"));
+            reject(new Error("Missing Conversation ID"));
             return;
         }
 
         Office.context.mailbox.getCallbackTokenAsync({ isRest: true }, (tokenResult) => {
             if (tokenResult.status !== Office.AsyncResultStatus.Succeeded) {
-                reject(new Error("Αποτυχία λήψης token."));
+                reject(new Error("Token acquisition security fault."));
                 return;
             }
 
@@ -218,7 +229,7 @@ async function getFullConversationViaREST() {
             const restUrl = Office.context.mailbox.restUrl;
             
             if (!restUrl) {
-                reject(new Error("Δεν βρέθηκε REST URL"));
+                reject(new Error("Invalid Mailbox REST Endpoint"));
                 return;
             }
 
@@ -231,7 +242,7 @@ async function getFullConversationViaREST() {
                     'prefer': 'outlook.body-content-type="text"'
                 }
             })
-            .then(res => res.ok ? res.json() : reject(new Error("REST fetch failed")))
+            .then(res => res.ok ? res.json() : reject(new Error("REST transport layer fault")))
             .then(data => {
                 if (data && data.value && data.value.length > 0) {
                     const messages = data.value
@@ -250,7 +261,7 @@ async function getFullConversationViaREST() {
                         });
                     resolve(messages);
                 } else {
-                    reject(new Error("Empty thread"));
+                    reject(new Error("Empty data response"));
                 }
             })
             .catch(err => reject(err));
@@ -265,6 +276,7 @@ function initOutlookData() {
     emailContext.text = '';
     emailContext.fullConversation = [];
 
+    // Resolution των στοιχείων του ενεργού χρήστη
     if (Office.context.mailbox.userProfile) {
         emailContext.myEmail = Office.context.mailbox.userProfile.emailAddress || '';
         emailContext.myName = Office.context.mailbox.userProfile.displayName || '';
@@ -281,7 +293,7 @@ function initOutlookData() {
     };
 
     document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία'; 
-    startLoadingAnim(["📡 Σύνδεση...", "🔍 Ανάλυση Thread...", "🤖 Κατηγοριοποίηση..."]);
+    startLoadingAnim(["📡 Συγχρονισμός...", "🔍 Ανάλυση Ιστορικού...", "🤖 Email Audit..."]);
 
     getFullConversationViaREST()
         .then(messages => {
@@ -322,7 +334,7 @@ function fallbackCurrentMail(retryCount = 0) {
 }
 
 // ----------------------
-// LOADING MANAGEMENT
+// LOADING CONTROLS
 // ----------------------
 let loadingInterval;
 function startLoadingAnim(messages) {
@@ -349,47 +361,50 @@ function finishLoading() {
     }
 }
 
-// ----------------------
-// EMAIL AUDIT & SUMMARY ENGINE (ROBOTIC ARCHITECTURE)
-// ----------------------
+// -------------------------------------------------------------------------
+// 7. EMAIL AUDIT & SUMMARY ENGINE (THE $1M CHIEF OF STAFF PROMPT)
+// -------------------------------------------------------------------------
 async function generateSummaryAndAudit() {
     if (!config.apiKey) {
         document.getElementById('summaryText').innerText = '⚠️ Εκκρεμεί το API Key στις ρυθμίσεις.';
         return;
     }
 
-    if (!emailContext.text || emailContext.text.trim() === "" || emailContext.text.includes("Σφάλμα ανάγνωσης.")) {
-        document.getElementById('summaryText').innerText = '⏳ Αναμονή για φόρτωση email...';
-        return;
-    }
-
-    // Is the user's domain a generic public email?
+    // Ανίχνευση αν ο χρήστης ανήκει σε generic public provider (Gmail, Outlook.com κτλ)
     const isPublicDomain = ['outlook.com', 'gmail.com', 'hotmail.com', 'yahoo.com', 'live.com'].includes(emailContext.myDomain);
 
-    const prompt = `[STRICT SYSTEM COMMAND]
-You are a dry corporate automation API. You must output EXACTLY one valid JSON object matching the JSON Schema below. Do not repeat these instructions. Do not write markdown blocks. Do not add intro/outro text.
+    const prompt = `[STRICT AUTOMATION SYSTEM COMMAND]
+You are a dry corporate automation API. You must parse the email thread and output EXACTLY one valid JSON object matching the JSON Schema below. No markdown wrappers. No text descriptions outside the schema. No thought echo.
 
-[JSON SCHEMA]
+[JSON SCHEMA REQUIREMENT]
 {
-  "summary": "Μια κορυφαία executive σύνοψη (έως 4 γραμμές) στα Ελληνικά. Αναφέρετε ποιος έστειλε το τελευταίο μήνυμα, τι ζητάει, και αν εκκρεμεί δική μας ενέργεια.",
-  "category": "High Priority"
+  "summary": "Μια ηχητική executive σύνοψη (έως 4 γραμμές) στα Ελληνικά, γραμμένη σε ρέον, φυσικό ύφος για ανάγνωση σε ακουστικά. Αναφέρετε ποιος έστειλε το τελευταίο μήνυμα και τι ακριβώς ζητάει.",
+  "category": "High Priority",
+  "urgency": "High" or "Medium" or "Low",
+  "sentiment": "Δυσαρεστημένος" or "Ουδέτερος" or "Θερμός",
+  "action_items": [
+     "Μια σαφής εκκρεμότητα / task που προκύπτει για τον χρήστη (στα Ελληνικά)",
+     "Δεύτερη εκκρεμότητα (αν υπάρχει)"
+  ],
+  "smart_buttons": [
+     {"label": "👍 Σύντομο Label Κουμπιού", "reply_instruction": "Οδηγία προς το LLM για το τι να απαντήσει"},
+     {"label": "⏳ Δεύτερο Label", "reply_instruction": "Οδηγία 2"}
+  ]
 }
 
 [IDENTITY CONTEXT]
 - Active User Name: "${emailContext.myName}"
 - Active User Email: "${emailContext.myEmail}"
 - Active User Corporate Domain: "@${emailContext.myDomain}"
-- Public Provider Flag: ${isPublicDomain} (If true, do NOT trust the domain for internal matching. Only identify "${emailContext.myEmail}" as the internal user).
+- Public Provider Flag: ${isPublicDomain} (If true, do NOT trust domain suffixes for matching. Only match "${emailContext.myEmail}" as the internal profile).
 
-[CRITICAL USER MEMORY & FILTERS]
+[CRITICAL USER MEMORY & PREFERENCES]
 ${config.agentMemory || 'None provided.'}
 
-[CATEGORY RULES]
-Choose EXACTLY one token for the "category" field:
-- "High Priority": Crucial external client requests, agreements, contracts, or matches from CRITICAL USER MEMORY.
-- "Internal": Messages from colleagues within the same company domain. (If Public Provider Flag is true, treat this category as rare unless matching specific names in memory).
-- "Newsletter": Updates, alerts, mass reports, automations.
-- "Spam": Clutter, sales pitches.
+[STRICT FILTER RULES]
+- Max 3 elements in "action_items". If none exist, return an empty array [].
+- Max 3 elements in "smart_buttons". Generate contextual, ultra-relevant answers for the latest message.
+- For "category", choose exactly one: "High Priority" (critical clients/deals), "Internal" (colleagues), "Newsletter" (circulars/alerts), "Spam" (sales pitches).
 
 [DATA - EMAIL THREAD TO PROCESS]
 ${emailContext.text.substring(0, 8000)}`;
@@ -412,46 +427,103 @@ ${emailContext.text.substring(0, 8000)}`;
 
         const data = await res.json();
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        
         let resObj = safeJsonParse(raw);
         
-        document.getElementById('summaryText').innerText = resObj.summary;
-        updateAuditMetrics(resObj.category || 'Spam');
-        renderCategoryBadge(resObj.category || 'Spam');
+        // 1. RENDERING: Σύνθεση της Σύνοψης και των Action Items στο UI
+        let finalHtmlOutput = `<p class="mb-3">${resObj.summary}</p>`;
+        
+        if (resObj.action_items && resObj.action_items.length > 0) {
+            finalHtmlOutput += `<div class="mt-3 pt-2 border-t border-border/40">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-blue-400 block mb-1.5 flex items-center gap-1">
+                    <i data-lucide="check-square" class="w-3 h-3"></i> Εκκρεμότητες (Tasks)
+                </span>
+                <ul class="space-y-1 text-xs text-mutedForeground pl-1">`;
+            resObj.action_items.forEach(item => {
+                finalHtmlOutput += `<li class="flex items-start gap-1.5">🔹 <span>${item}</span></li>`;
+            });
+            finalHtmlOutput += `</ul></div>`;
+        }
+        
+        document.getElementById('summaryText').innerHTML = finalHtmlOutput;
+        lucide.createIcons(); // Re-render extracted lucide elements
+        
+        // 2. RENDERING: Dynamic Sentiment & Urgency Badge Management
+        renderEnhancedBadges(resObj);
+        
+        // 3. RENDERING: Dynamic Quick Actions Injection
+        renderDynamicSmartButtons(resObj.smart_buttons);
 
-        if (resObj.summary.length > 150) {
+        updateAuditMetrics(resObj.category || 'Spam');
+
+        if (document.getElementById('summaryText').innerText.length > 150) {
             document.getElementById('summaryContent').classList.add('max-h-24');
-            document.getElementById('summaryFade')?.classList.remove('hidden');
+            document.getElementById('summaryFade')?. Gil?.classList.remove('hidden');
             document.getElementById('expandSummaryBtn')?.classList.remove('hidden');
         }
     } catch (e) {
-        console.error("❌ Summary Error:", e);
+        console.error("❌ Summary Operational Fault:", e);
         document.getElementById('summaryText').innerText = 'Αδυναμία αυτόματης φόρτωσης σύνοψης.';
         document.getElementById('voiceStatus').innerText = `⚠️ Σφάλμα Σύνοψης: ${e.message}`;
     }
 }
 
-function renderCategoryBadge(cat) {
+function renderEnhancedBadges(resObj) {
     const badge = document.getElementById('emailCategoryBadge');
-    badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full transition-all duration-300 ";
+    badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full transition-all duration-300 flex items-center gap-1";
     
-    switch(cat) {
+    let radarText = '';
+    
+    // Category Parsing
+    switch(resObj.category) {
         case 'High Priority':
-            badge.innerText = '🔥 Υψηλή Προτεραιότητα';
+            radarText = '🔥 Υψηλή Προτεραιότητα';
             badge.classList.add('bg-red-500/20', 'text-red-400');
             break;
         case 'Internal':
-            badge.innerText = '💼 Εσωτερικό / Εταιρικό';
+            radarText = '💼 Εσωτερικό / Εταιρικό';
             badge.classList.add('bg-blue-500/20', 'text-blue-400');
             break;
         case 'Newsletter':
-            badge.innerText = '📢 Newsletter';
+            radarText = '📢 Newsletter';
             badge.classList.add('bg-yellow-500/20', 'text-yellow-400');
             break;
         default:
-            badge.innerText = '🗑️ Χαμηλή Σημασία';
+            radarText = '🗑️ Χαμηλή Σημασία';
             badge.classList.add('bg-zinc-800', 'text-zinc-400');
     }
+
+    // Urgency & Sentiment Integration inside Badge
+    if (resObj.urgency === 'High' && resObj.category !== 'Spam') {
+        radarText += ' | 🚨 ΕΠΕΙΓΟΝ';
+    }
+    if (resObj.sentiment === 'Δυσαρεστημένος') {
+        radarText += ' | 😡 Δυσαρέσκεια';
+    }
+    
+    badge.innerText = radarText;
+}
+
+function renderDynamicSmartButtons(buttonsArray) {
+    // Επιλέγουμε το εσωτερικό div των κουμπιών μέσα στο "mb-5" component
+    const container = document.querySelector('.mb-5 div.flex');
+    if (!container) return;
+
+    container.innerHTML = ''; // Εκκαθάριση στατικών ή παλιών κουμπιών
+
+    // Αν το AI απέτυχε ή δεν επέστρεψε έξυπνα κουμπιά, βάζουμε ασφαλή defaults
+    const safeButtons = (buttonsArray && buttonsArray.length > 0) ? buttonsArray : [
+        {"label": "👍 Ευχαριστώ", "reply_instruction": "Γράψε μια απάντηση όπου θα ευχαριστείς θερμά"},
+        {"label": "✅ Αποδοχή", "reply_instruction": "Γράψε μια απάντηση ότι αποδεχόμαστε"},
+        {"label": "❌ Απόρριψη", "reply_instruction": "Γράψε μια ευγενική αρνητική απάντηση απόρριψης"}
+    ];
+
+    safeButtons.forEach(btn => {
+        const nativeBtn = document.createElement('button');
+        nativeBtn.className = "flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1 text-primary font-medium shadow-sm";
+        nativeBtn.innerText = btn.label;
+        nativeBtn.onclick = () => handleQuickAction(btn.reply_instruction);
+        container.appendChild(nativeBtn);
+    });
 }
 
 function updateAuditMetrics(cat) {
@@ -465,7 +537,7 @@ function updateAuditMetrics(cat) {
 }
 
 // ----------------------
-// AUDIT DASHBOARD RENDERING
+// AUDIT DASHBOARD COMPONENT
 // ----------------------
 function openAuditDashboard() {
     navigate('view-audit');
@@ -492,27 +564,9 @@ function clearAuditData() {
     openAuditDashboard();
 }
 
-document.getElementById('expandSummaryBtn')?.addEventListener('click', function() {
-    const summaryEl = document.getElementById('summaryContent');
-    const fadeEl = document.getElementById('summaryFade');
-    if (summaryEl.classList.contains('max-h-24')) {
-        summaryEl.classList.remove('max-h-24');
-        fadeEl?.classList.add('hidden');
-        this.innerText = 'Λιγότερα...';
-    } else {
-        summaryEl.classList.add('max-h-24');
-        fadeEl?.classList.remove('hidden');
-        this.innerText = 'Περισσότερα...';
-    }
-});
-
-document.getElementById('manualSummaryBtn')?.addEventListener('click', () => {
-    generateSummaryAndAudit();
-});
-
-// ----------------------
-// GENERATE DRAFT ENGINE (ROBOTIC ARCHITECTURE)
-// ----------------------
+// -------------------------------------------------------------------------
+// 8. DRAFT GENERATION ENGINE ($1,000,000 COMPILER)
+// -------------------------------------------------------------------------
 async function generateDraft(instruction, audioObj) {
     if (!config.apiKey) { navigate('view-settings'); return; }
 
@@ -524,38 +578,33 @@ async function generateDraft(instruction, audioObj) {
     document.getElementById('voiceStatus').innerText = '🤖 Σκέφτομαι...';
 
     const optimizedContext = emailContext.text.length > 7000
-        ? emailContext.text.substring(0, 7000) + "\n\n[...truncated for stability...]"
+        ? emailContext.text.substring(0, 7000) + "\n\n[...truncated due to payload limits...]"
         : emailContext.text;
 
     const isPublicDomain = ['outlook.com', 'gmail.com', 'hotmail.com', 'yahoo.com', 'live.com'].includes(emailContext.myDomain);
 
     const systemPrompt = `[STRICT SYSTEM COMMAND]
-You are a raw automated API endpoint. You must output EXACTLY one valid JSON object matching the JSON Schema below. Do not repeat these instructions. Do not write bullet points or checklists. Do not write text outside the JSON.
+You are a raw automated API endpoint. You must output EXACTLY one valid JSON object matching the JSON Schema below. Do not repeat these instructions. Do not write bullet points or checklists. Do not write thoughts outside the JSON.
 
 [JSON SCHEMA]
 {"intent": "draft", "content": "Your full professional Greek email reply here"}
 
 [CONTEXT IDENTITY]
-- You are writing on behalf of: "${emailContext.myName}"
+- User Name (You represent this person): "${emailContext.myName}"
 - User Email: "${emailContext.myEmail}"
-- User Corporate Domain: "@${emailContext.myDomain}"
-- Public Provider Flag: ${isPublicDomain} (If true, do not assume anyone sharing @${emailContext.myDomain} is a colleague unless specified).
-- Strict Rule: Any message marked with "ΑΠΟΣΤΟΛΕΑΣ: ${emailContext.myEmail}" or containing your name "${emailContext.myName}" was sent by YOU. Do not reply to your own messages. Reply to the OTHER party.
+- Corporate Domain Area: "@${emailContext.myDomain}"
+- Public Provider Flag: ${isPublicDomain}
+- Strict Rule: Messages sent by "${emailContext.myEmail}" are YOUR own past statements. Write a reply directed to the OTHER party.
 
 [CRITICAL USER MEMORY & PREFERENCES]
 ${config.agentMemory || 'None set.'}
 
-[INSTRUCTIONS]
+[CORE INSTRUCTIONS]
 1. Write the final corporate email text directly in the "content" field.
-2. Language: Greek. Target Tone: ${config.tone}.
-3. Custom User Directive: ${config.customPrompt || 'None.'}
-4. Never include brackets, subject lines, placeholders, or ellipses (...). The text must be perfect and ready to send.
-
-[DATA - EMAIL THREAD CONTEXT]
-${optimizedContext}
-
-[USER EXECUTIVE COMMAND]
-${instruction}`;
+2. Target Tone: ${config.tone}. Language: Greek.
+3. Custom Injector Directive: ${config.customPrompt || 'None.'}
+4. Never include brackets, subject lines, placeholders, or ellipses (...). The email body text must be complete and ready to send.
+5. If the thread context is empty, act autonomously and synthesize a brilliant independent reply meeting the user command.`;
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
@@ -567,7 +616,7 @@ ${instruction}`;
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: [{ parts }],
-                generationConfig: { temperature: 0.1 }
+                generationConfig: { temperature: 0.2 }
             })
         });
 
@@ -582,8 +631,8 @@ ${instruction}`;
         const parsed = safeJsonParse(raw);
 
         if (!parsed.content || parsed.content.trim() === "..." || parsed.content.trim().length < 5) {
-            console.warn("⚠️ Fallback activated.");
-            parsed.content = `Αγαπητέ συνεργάτη,\n\nΣε συνέχεια του μηνύματός σας, θα ήθελα να σας ενημερώσω ότι αποδέχομαι την πρόταση / προσφορά. Θα επανέλθω σύντομα με τις σχετικές λεπτομέρειες.\n\nΜε εκτίμηση`;
+            console.warn("⚠️ Interceptor triggered: structural payload empty. Loading fallback template.");
+            parsed.content = `Αγαπητέ συνεργάτη,\n\nΣε συνέχεια του μηνύματός σας, θα ήθελα να σας ενημερώσω ότι αποδέχομαι την πρόταση / προσφορά. Θα επανέλθω σύντομα με τις σχετικές λεπτομέρειες.\n\nΜε εκτίμηση,\n${emailContext.myName}`;
         }
 
         if (parsed.intent === 'question') {
@@ -595,14 +644,14 @@ ${instruction}`;
         }
         document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία';
     } catch (e) {
-        console.error("🤖 AI Draft Error:", e);
+        console.error("🤖 AI Draft operational fault:", e);
         document.getElementById('voiceStatus').innerText = '❌ Σφάλμα AI: ' + e.message;
     }
 }
 
-// ----------------------
-// CORE INTERACTION EVENT BINDINGS
-// ----------------------
+// -------------------------------------------------------------------------
+// 9. CORE UI INTERACTION EVENT BINDINGS
+// -------------------------------------------------------------------------
 function handleQuickAction(actionType) {
     generateDraft(actionType, null);
 }
@@ -622,9 +671,9 @@ document.getElementById('tweakBtn').onclick = () => {
     generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με: "${tweak}"\n\nΠΑΛΙΟ EMAIL:\n${current}`, null);
 };
 
-// ----------------------
-// VOICE CONTROLS
-// ----------------------
+// -------------------------------------------------------------------------
+// 10. VOICE HARDWARE LAYER CONTROLS (MIC CAPTURE)
+// -------------------------------------------------------------------------
 const voiceBtn = document.getElementById('voiceBtn');
 const voiceStatus = document.getElementById('voiceStatus');
 
@@ -671,9 +720,9 @@ function stopRecording() {
     voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
 }
 
-// ----------------------
-// INSERT COMPONENT TO OUTLOOK
-// ----------------------
+// -------------------------------------------------------------------------
+// 11. INJECTION LAYER (INSERTION BACK INTO OUTLOOK DESIGN BOX)
+// -------------------------------------------------------------------------
 document.getElementById('insertOutlookBtn').onclick = () => {
     const finalTxt = document.getElementById('draftTextarea').value;
     if (!finalTxt.trim()) return;
