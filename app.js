@@ -488,33 +488,47 @@ document.getElementById('manualSummaryBtn')?.addEventListener('click', () => {
 // ----------------------
 // GENERATE DRAFT WITH AGENTIC MEMORY & ANTI-COT STRUCTURING
 // ----------------------
+// ----------------------
+// GENERATE DRAFT WITH AGENTIC MEMORY (SERVER-CRASH PROTECTION)
+// ----------------------
 async function generateDraft(instruction, audioObj) {
     if (!config.apiKey) { navigate('view-settings'); return; }
 
     if (!emailContext.text || emailContext.text.trim() === "" || emailContext.text.includes("Σφάλμα ανάγνωσης.")) {
+        console.log("⚠️ Απόπειρα δημιουργίας draft χωρίς έτοιμο email context.");
         document.getElementById('voiceStatus').innerText = "⏳ Το email φορτώνει ακόμα... Ξαναπροσπαθήστε σε 1 δευτερόλεπτο.";
         return;
     }
 
     document.getElementById('voiceStatus').innerText = '🤖 Σκέφτομαι...';
 
-    const optimizedContext = emailContext.text.length > 10000
-        ? emailContext.text.substring(0, 10000)
+    // Μειώνουμε το context στους 6.000 χαρακτήρες για να μην «μπουκώνει» ο server της Google (Προστασία από 500/503)
+    const optimizedContext = emailContext.text.length > 6000
+        ? emailContext.text.substring(0, 6000) + "\n\n[...το παλαιότερο ιστορικό περικόπηκε για εξοικονόμηση μνήμης...]"
         : emailContext.text;
 
-    // 🔥 ΥΠΕΡ-ΑΠΛΟΠΟΙΗΜΕΝΟ STRUCTURAL PROMPT: Αποτρέπει το μοντέλο από το να κάνει Chain-of-Thought αναλύσεις
-    const systemPrompt = `{
-  "instruction": "Return a raw JSON object containing the professional reply email body text. Do not provide any mental drafts, brainstorming, checklists, markdown syntax, or text outside the JSON structure.",
-  "format": {
-    "intent": "draft",
-    "content": "The actual full body text of the reply email written in Greek"
-  },
-  "user_command": "${instruction}",
-  "tone_setting": "${config.tone}",
-  "user_memory_profile": "${config.agentMemory || 'None'}",
-  "custom_instruction": "${config.customPrompt || 'None'}",
-  "email_context": "${optimizedContext.replace(/"/g, '\\"')}"
-}`;
+    // Καθαρό, απλό και αυστηρό prompt κειμένου που δεν κρασάρει το API
+    const systemPrompt = `Είσαι ένας Executive AI Assistant για επαγγελματική αλληλογραφία. Η απάντησή σου πρέπει να είναι ΑΠΟΚΛΕΙΣΤΙΚΑ ένα έγκυρο αντικείμενο JSON, χωρίς markdown (\`\`\`json) ή επεξηγήσεις γύρω από αυτό.
+ΚΑΝΟΝΑΣ: Απαγορεύεται αυστηρά να χρησιμοποιήσεις αποσιωπητικά (...) ή κενά templates. Γράψε ένα πλήρες, έτοιμο και ολοκληρωμένο κείμενο.
+Εάν το Ιστορικό Συνομιλίας είναι άδειο, συνέθεσε ένα πλήρες email βασισμένο 100% στην οδηγία του χρήστη.
+
+📧 ΙΣΤΟΡΙΚΟ ΣΥΝΟΜΙΛΙΑΣ (EMAIL THREAD):
+${optimizedContext}
+
+👤 ΟΔΗΓΙΑ ΧΡΗΣΤΗ:
+${instruction}
+
+🧠 ΜΝΗΜΗ & ΠΡΟΤΙΜΗΣΕΙΣ ΧΡΗΣΤΗ:
+${config.agentMemory || 'Δεν έχουν οριστεί ειδικές προτιμήσεις.'}
+
+🎯 ΚΑΘΗΚΟΝ:
+Επίστρεψε ΜΟΝΟ ένα αντικείμενο JSON με αυτήν ακριβώς τη δομή:
+{
+ "intent": "draft",
+ "content": "Εδώ γράψε ολόκληρο το σώμα του email απάντησης στα Ελληνικά με βάση την οδηγία του χρήστη."
+}
+
+(Αν ο χρήστης κάνει απλή ερώτηση για το email αντί για σύνταξη απάντησης, άλλαξε το intent σε "question" και βάλε την απάντηση στο πεδίο content).`;
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
@@ -527,7 +541,7 @@ async function generateDraft(instruction, audioObj) {
             body: JSON.stringify({
                 contents: [{ parts }],
                 generationConfig: { 
-                    temperature: 0.1 // Ελάχιστο προκειμένου να μην παρεκκλίνει από τη δομή
+                    temperature: 0.2 // Χαμηλό για αποφυγή structural errors
                 }
             })
         });
@@ -540,9 +554,10 @@ async function generateDraft(instruction, audioObj) {
         const data = await res.json();
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         
+        // Parsing μέσω του ασφαλούς safeJsonParse
         const parsed = safeJsonParse(raw);
 
-        // Αναχαίτιση σε περίπτωση που ξέφυγαν αποσιωπητικά
+        // Ανίχνευση και αναχαίτιση placeholders
         if (!parsed.content || parsed.content.trim() === "..." || parsed.content.trim().length < 5) {
             console.warn("⚠️ Fallback activated.");
             parsed.content = `Αγαπητέ συνεργάτη,\n\nΣε συνέχεια του μηνύματός σας, θα ήθελα να σας ενημερώσω ότι αποδέχομαι την πρόταση / προσφορά. Θα επανέλθω σύντομα με τις σχετικές λεπτομέρειες.\n\nΜε εκτίμηση`;
@@ -561,7 +576,6 @@ async function generateDraft(instruction, audioObj) {
         document.getElementById('voiceStatus').innerText = '❌ Σφάλμα AI: ' + e.message;
     }
 }
-
 // ----------------------
 // CORE INTERACTION EVENT BINDINGS
 // ----------------------
