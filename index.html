@@ -106,10 +106,21 @@
         <div class="mb-5">
             <h2 class="text-xs font-bold uppercase tracking-wider text-mutedForeground mb-2">Άμεσες Ενέργειες</h2>
             <div class="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
-                <button onclick="handleQuickAction('Γράψε μια απάντηση όπου θα ευχαριστείς θερμά')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">👍 Ευχαριστώ</button>
-                <button onclick="handleQuickAction('Γράψε μια απάντηση ότι αποδεχόμαστε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">✅ Αποδοχή</button>
-                <button onclick="handleQuickAction('Γράψε μια ευγενική αρνητική απάντηση απόρριψης')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">❌ Απόρριψη</button>
-                <button onclick="handleQuickAction('Γράψε ότι θα το σκεφτούμε και θα επανέλθουμε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">⏳ Θα επανέλθω</button>
+                <button onclick="handleQuickAction('Γράψε μια απάντηση όπου θα ευχαριστείς θερμά')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1">
+    <i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i> Ευχαριστώ
+</button>
+
+<button onclick="handleQuickAction('Γράψε μια απάντηση ότι αποδεχόμαστε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1">
+    <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Αποδοχή
+</button>
+
+<button onclick="handleQuickAction('Γράψε μια ευγενική αρνητική απάντηση απόρριψης')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1">
+    <i data-lucide="x-circle" class="w-3.5 h-3.5"></i> Απόρριψη
+</button>
+
+<button onclick="handleQuickAction('Γράψε ότι θα το σκεφτούμε και θα επανέλθουμε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1">
+    <i data-lucide="clock" class="w-3.5 h-3.5"></i> Θα επανέλθω
+</button>
             </div>
             <div id="dynamicActionsContainer" class="flex overflow-x-auto gap-2 pb-2 scrollbar-hide mt-2 hidden"></div>
         </div>
