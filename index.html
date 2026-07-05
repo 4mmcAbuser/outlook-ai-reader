@@ -111,6 +111,7 @@
             <button id="voiceBtn" class="w-24 h-24 rounded-full siri-idle flex items-center justify-center text-primary cursor-pointer border border-border focus:outline-none">
                 <i data-lucide="mic" class="w-8 h-8 opacity-70"></i>
             </button>
+            <canvas id="waveformCanvas" width="200" height="40" class="mt-2 rounded-lg hidden"></canvas>
             <span id="voiceStatus" class="text-xs text-mutedForeground mt-4 text-center">Κάντε κλικ για ομιλία</span>
         </div>
 
@@ -229,10 +230,27 @@
                     <option value="Άμεσος, σύντομος και περιεκτικός.">Άμεσος (Σύντομος)</option>
                 </select>
             </div>
+            <div class="space-y-1.5">
+                <label class="text-xs font-medium text-mutedForeground">Ταχύτητα Εκφώνησης (TTS Speed)</label>
+                <select id="setTtsRate" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none">
+                    <option value="0.8">0.8x (Αργή)</option>
+                    <option value="1.0">1.0x (Κανονική)</option>
+                    <option value="1.25">1.25x (Γρήγορη)</option>
+                    <option value="1.5">1.5x (Πολύ Γρήγορη)</option>
+                    <option value="2.0">2.0x (Διπλάσια)</option>
+                </select>
+            </div>
             <div class="flex items-center justify-between bg-card border border-border p-3 rounded-lg">
                 <label class="text-sm font-medium text-primary">Αυτόματη Σύνοψη</label>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="setAutoSum" class="sr-only peer">
+                    <div class="w-9 h-5 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+            </div>
+            <div class="flex items-center justify-between bg-card border border-border p-3 rounded-lg">
+                <label class="text-sm font-medium text-primary">Αυτόματη Εκφώνηση (Auto-Read)</label>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="setAutoRead" class="sr-only peer">
                     <div class="w-9 h-5 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                 </label>
             </div>

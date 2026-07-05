@@ -14,6 +14,8 @@ let config = {
     model: 'gemini-2.5-flash', 
     tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
+    autoRead: false,
+    ttsRate: '1.0',
     customPrompt: '',
     agentMemory: '' 
 };
@@ -65,6 +67,8 @@ function loadSettings() {
     document.getElementById('setModel').value = config.model;
     document.getElementById('setTone').value = config.tone;
     document.getElementById('setAutoSum').checked = config.autoSum;
+    document.getElementById('setAutoRead').checked = !!config.autoRead;
+    document.getElementById('setTtsRate').value = config.ttsRate || '1.0';
     document.getElementById('setCustomPrompt').value = config.customPrompt || '';
     document.getElementById('setAgentMemory').value = config.agentMemory || '';
 
@@ -78,6 +82,8 @@ function saveSettings() {
     config.model = document.getElementById('setModel').value;
     config.tone = document.getElementById('setTone').value;
     config.autoSum = document.getElementById('setAutoSum').checked;
+    config.autoRead = document.getElementById('setAutoRead').checked;
+    config.ttsRate = document.getElementById('setTtsRate').value;
     config.customPrompt = document.getElementById('setCustomPrompt').value.trim();
     config.agentMemory = document.getElementById('setAgentMemory').value.trim();
 
@@ -183,7 +189,7 @@ function speakSummary() {
 
     currentSpeechUtterance = new SpeechSynthesisUtterance(textToRead);
     currentSpeechUtterance.lang = 'el-GR'; 
-    currentSpeechUtterance.rate = 0.95; 
+    currentSpeechUtterance.rate = parseFloat(config.ttsRate) || 1.0; 
 
     currentSpeechUtterance.onend = () => {
         document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση`;
@@ -436,6 +442,12 @@ ${emailContext.text.substring(0, 8000)}`;
         renderEnhancedBadges(resObj);
         renderDynamicSmartButtons(resObj.smart_buttons, resObj.calendar_event);
         updateAuditMetrics(resObj.category || 'Spam');
+
+        if (config.autoRead) {
+            setTimeout(() => {
+                speakSummary();
+            }, 300);
+        }
 
         // 🚀 FIX: Defensive DOM Layout Measurement
         // Επιτρέπουμε στο κείμενο να σχεδιαστεί και μετράμε αν ξεπερνάει τα 96px (max-h-24)
@@ -700,8 +712,57 @@ document.getElementById('tweakBtn').onclick = () => {
 // ----------------------
 // VOICE CAPTURE LAYER
 // ----------------------
+// -------------------------------------------------------------------------
+// 5. VOICE CAPTURE & WAVEFORM VISUALIZATION LAYER
+// -------------------------------------------------------------------------
 const voiceBtn = document.getElementById('voiceBtn');
 const voiceStatus = document.getElementById('voiceStatus');
+const canvas = document.getElementById('waveformCanvas');
+
+// Speech Recognition setup (Web Speech API)
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognitionSupported = !!SpeechRecognition;
+let recognition = null;
+let recognitionText = '';
+
+if (recognitionSupported) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'el-GR';
+
+    recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+        
+        recognitionText = finalTranscript || interimTranscript;
+        
+        // Dynamically insert transcribed text to active view input fields
+        const draftView = document.getElementById('view-draft');
+        if (draftView && draftView.classList.contains('view-active')) {
+            document.getElementById('tweakPrompt').value = recognitionText;
+        } else {
+            document.getElementById('textPrompt').value = recognitionText;
+        }
+    };
+
+    recognition.onerror = (e) => {
+        console.error("Speech recognition error:", e);
+    };
+}
+
+let audioContext = null;
+let analyser = null;
+let dataArray = null;
+let bufferLength = 0;
+let animationFrameId = null;
 
 voiceBtn.onclick = () => {
     if (isRecording) { stopRecording(); return; }
@@ -709,41 +770,165 @@ voiceBtn.onclick = () => {
 };
 
 function startRecording() {
+    recognitionText = '';
+    
+    // Clear inputs in active panels
+    const draftView = document.getElementById('view-draft');
+    if (draftView && draftView.classList.contains('view-active')) {
+        document.getElementById('tweakPrompt').value = '';
+    } else {
+        document.getElementById('textPrompt').value = '';
+    }
+
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        // Start web speech recognition
+        if (recognitionSupported && recognition) {
+            try {
+                recognition.start();
+            } catch (e) {
+                console.error("Failed to start speech recognition:", e);
+            }
+        }
+
+        // Setup real-time waveform visualizer
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioContext.createMediaStreamSource(stream);
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 64;
+            bufferLength = analyser.frequencyBinCount;
+            dataArray = new Uint8Array(bufferLength);
+            source.connect(analyser);
+
+            if (canvas) {
+                canvas.classList.remove('hidden');
+                drawWaveform();
+            }
+        } catch (err) {
+            console.error("Audio visualizer failed to initialize:", err);
+        }
+
+        // Fallback file recorder
         mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         audioChunks = [];
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
         
         mediaRecorder.onstop = () => {
-            voiceStatus.innerText = '🔄 Επεξεργασία ήχου...';
-            const blob = new Blob(audioChunks, { type: 'audio/webm' });
-            const reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = () => {
-                const base64 = reader.result.split(',')[1];
-                generateDraft('🎤 Φωνητική εντολή χρήστη', { data: base64, mimeType: 'audio/webm' });
-            };
+            if (canvas) canvas.classList.add('hidden');
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close();
+            }
+
+            voiceStatus.innerText = '🔄 Επεξεργασία...';
+
+            if (recognitionText.trim().length > 0) {
+                const draftView = document.getElementById('view-draft');
+                if (draftView && draftView.classList.contains('view-active')) {
+                    const currentDraft = document.getElementById('draftTextarea').value;
+                    generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με: "${recognitionText}"\n\nΠΑΛΙΟ EMAIL:\n${currentDraft}`, null);
+                } else {
+                    generateDraft(recognitionText, null);
+                }
+            } else {
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = () => {
+                    const base64 = reader.result.split(',')[1];
+                    const draftView = document.getElementById('view-draft');
+                    if (draftView && draftView.classList.contains('view-active')) {
+                        const currentDraft = document.getElementById('draftTextarea').value;
+                        generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με την ηχογραφημένη εντολή. ΠΑΛΙΟ EMAIL:\n${currentDraft}`, { data: base64, mimeType: 'audio/webm' });
+                    } else {
+                        generateDraft('🎤 Φωνητική εντολή χρήστη', { data: base64, mimeType: 'audio/webm' });
+                    }
+                };
+            }
         };
 
         mediaRecorder.start(1000);
         isRecording = true;
+        
         voiceBtn.className = "w-24 h-24 rounded-full siri-listening flex items-center justify-center text-primary cursor-pointer border border-border";
         voiceBtn.innerHTML = `<i data-lucide="square" class="w-8 h-8 text-white"></i>`;
         lucide.createIcons();
-        voiceStatus.innerText = '🔴 Καταγραφή... Μιλήστε τώρα';
-    }).catch(() => { voiceStatus.innerText = '❌ Σφάλμα μικροφώνου'; });
+        voiceStatus.innerText = '🔴 Ακούω... Μιλήστε τώρα';
+    }).catch(() => { 
+        voiceStatus.innerText = '❌ Σφάλμα μικροφώνου'; 
+    });
 }
 
 function stopRecording() {
+    if (recognitionSupported && recognition) {
+        try {
+            recognition.stop();
+        } catch(e) {}
+    }
+
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
         mediaRecorder.stream.getTracks().forEach(track => track.stop());
     }
+    
     isRecording = false;
     voiceBtn.className = "w-24 h-24 rounded-full siri-idle flex items-center justify-center text-primary cursor-pointer border border-border";
     voiceBtn.innerHTML = `<i data-lucide="mic" class="w-8 h-8 opacity-70"></i>`;
     lucide.createIcons();
     voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
+}
+
+function drawWaveform() {
+    if (!isRecording) return;
+    animationFrameId = requestAnimationFrame(drawWaveform);
+
+    if (analyser && dataArray) {
+        analyser.getByteFrequencyData(dataArray);
+    }
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    let sum = 0;
+    if (dataArray) {
+        for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+        }
+    }
+    const average = bufferLength > 0 ? (sum / bufferLength) : 0;
+    const amplitude = Math.max(3, (average / 255) * (height * 1.1));
+
+    const layers = [
+        { color: 'rgba(59, 130, 246, 0.8)', speed: 0.02, phase: 0, width: 2.5 },
+        { color: 'rgba(147, 51, 234, 0.55)', speed: 0.03, phase: 2, width: 1.5 },
+        { color: 'rgba(236, 72, 153, 0.35)', speed: 0.015, phase: 4, width: 1.0 }
+    ];
+
+    layers.forEach(layer => {
+        ctx.lineWidth = layer.width;
+        ctx.strokeStyle = layer.color;
+        ctx.beginPath();
+
+        let x = 0;
+        const sliceWidth = width / 60;
+
+        for (let i = 0; i <= 60; i++) {
+            const taper = Math.sin((i / 60) * Math.PI); // Smooth envelope
+            const angle = (i * 0.15) + (Date.now() * layer.speed) + layer.phase;
+            const y = (height / 2) + Math.sin(angle) * amplitude * taper;
+
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+            x += sliceWidth;
+        }
+        ctx.stroke();
+    });
 }
 
 // ----------------------
@@ -767,4 +952,27 @@ document.getElementById('insertOutlookBtn').onclick = () => {
 document.getElementById('cancelDraftBtn')?.addEventListener('click', () => {
     document.getElementById('draftTextarea').value = '';
     navigate('view-main');
+});
+
+// -------------------------------------------------------------------------
+// 6. GLOBAL KEYBOARD SHORTCUTS
+// -------------------------------------------------------------------------
+document.addEventListener('keydown', (e) => {
+    const activeEl = document.activeElement;
+    const isTyping = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        activeEl.tagName === 'TEXTAREA' || 
+        activeEl.isContentEditable
+    );
+
+    if (e.code === 'Space' && !isTyping) {
+        e.preventDefault(); // Stop scrolling the view
+        if (voiceBtn) voiceBtn.click();
+    }
+
+    if (e.code === 'Escape') {
+        if (isRecording) {
+            stopRecording();
+        }
+    }
 });
