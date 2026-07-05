@@ -110,20 +110,22 @@ function cleanHtmlToText(html) {
 }
 
 // Upgraded Bulletproof Parser: Converts raw text responses into synthetic JSON objects dynamically
+// Upgraded Bulletproof Parser: Converts raw text responses into synthetic JSON objects dynamically
 function safeJsonParse(rawStr) {
     if (!rawStr) throw new Error("Κενή απάντηση από το AI.");
     
     let cleanStr = rawStr.replace(/```json/gi, '').replace(/```/gi, '').trim();
     let start = cleanStr.indexOf('{');
     
-    // 🔥 SMART BUG FIX: Αν το μοντέλο επέστρεψε σκέτο κείμενο/παράγραφο χωρίς άγκιστρα, 
-    // το δεχόμαστε ως έγκυρη απάντηση αντί να κρασάρουμε με σφάλμα JSON!
+    // Αν το μοντέλο επέστρεψε σκέτο κείμενο (reasoning) χωρίς άγκιστρα
     if (start === -1) {
-        console.warn("⚠️ Το AI δεν επέστρεψε JSON δομή. Μετατροπή απλού κειμένου σε object context.");
+        console.warn("⚠️ Το AI δεν επέστρεψε JSON δομή. Καθαρισμός reasoning...");
+        // Αν υπάρχουν bullet points, τα αφαιρούμε για να μείνει μόνο το καθαρό κείμενο
+        let cleanText = cleanStr.replace(/^\s*[\*\-\>]\s*/gm, '').trim();
         return {
-            summary: cleanStr,
-            content: cleanStr, 
-            intent: (cleanStr.length > 120 || cleanStr.includes("Αγαπητέ") || cleanStr.includes("Γεια")) ? "draft" : "question",
+            summary: cleanText,
+            content: cleanText, 
+            intent: (cleanText.length > 120 || cleanText.includes("Αγαπητέ") || cleanText.includes("Γεια")) ? "draft" : "question",
             category: "High Priority"
         };
     }
@@ -131,6 +133,7 @@ function safeJsonParse(rawStr) {
     let braceCount = 0;
     let inString = false;
     let escaping = false;
+    let endIndex = -1;
     
     for (let i = start; i < cleanStr.length; i++) {
         const char = cleanStr[i];
@@ -144,23 +147,35 @@ function safeJsonParse(rawStr) {
             else if (char === '}') {
                 braceCount--;
                 if (braceCount === 0) {
+                    endIndex = i;
                     const candidate = cleanStr.substring(start, i + 1);
-                    return JSON.parse(candidate);
+                    try {
+                        return JSON.parse(candidate);
+                    } catch (e) {
+                        // Αν αποτύχει, συνεχίζουμε για να βρούμε το επόμενο κλεισιμο
+                    }
                 }
             }
         }
     }
     
     const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-        return {
-            summary: cleanStr,
-            content: cleanStr,
-            intent: "draft",
-            category: "High Priority"
-        };
+    if (jsonMatch) {
+        try {
+            return JSON.parse(jsonMatch[0]);
+        } catch (e) {
+            // Αν σπάσει πάλι, επιστρέφουμε καθαρό κείμενο
+        }
     }
-    return JSON.parse(jsonMatch[0]);
+    
+    // Fallback: καθαρίζουμε bullets και επιστρέφουμε απλό κείμενο
+    let fallbackText = cleanStr.replace(/^\s*[\*\-\>]\s*/gm, '').trim();
+    return {
+        summary: fallbackText,
+        content: fallbackText,
+        intent: "draft",
+        category: "High Priority"
+    };
 }
 
 // ----------------------
@@ -515,6 +530,7 @@ async function generateDraft(instruction, audioObj) {
         ? emailContext.text.substring(0, 10000) + "\n\n[...το παλαιότερο ιστορικό περικόπηκε...]"
         : emailContext.text;
 
+    // 🔥 ΠΑΡΑΔΕΙΓΜΑ ΠΡΟΣ ΜΙΜΗΣΗ (FEW-SHOT) ΓΙΑ ΝΑ ΚΑΤΑΛΑΒΕΙ ΟΤΙ ΔΕΝ ΘΕΛΟΥΜΕ REASONING
     const systemPrompt = `Είσαι ένας Executive AI Assistant για επαγγελματική αλληλογραφία.
     
 📧 ΙΣΤΟΡΙΚΟ ΣΥΝΟΜΙΛΙΑΣ (EMAIL THREAD):
@@ -527,9 +543,14 @@ async function generateDraft(instruction, audioObj) {
  ${config.agentMemory || 'Δεν έχουν οριστεί ειδικές προτιμήσεις.'}
 
 🎯 ΚΑΘΗΚΟΝ:
-Επέστρεψε ΑΥΣΤΗΡΑ ένα JSON με τα παρακάτω κλειδιά:
-- "intent": Δώσε την τιμή "draft" αν φτιάχνεις email, ή "question" αν ο χρήστης κάνει γενική ερώτηση.
-- "content": Γράψε το πλήρες, ολοκληρωμένο κείμενο της απάντησης ή του email στα Ελληνικά. Το κείμενο πρέπει να είναι έτοιμο προς αποστολή.`;
+Επέστρεψε ΑΥΣΤΗΡΑ ένα JSON. 
+ΑΠΑΓΟΡΕΥΕΤΑΙ να γράψεις σκέψεις, λογική, ανάλυση, reasoning ή bullet points. Η έξοδος πρέπει να ξεκινάει απευθείας με "{".
+
+Δομή JSON:
+{
+  "intent": "draft" αν φτιάχνεις email, ή "question" αν ο χρήστης κάνει γενική ερώτηση,
+  "content": "Γράψε εδώ απευθείας το πλήρες, ολοκληρωμένο κείμενο της απάντησης ή του email στα Ελληνικά. Το κείμενο πρέπει να είναι έτοιμο προς αποστολή."
+}`;
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
@@ -559,11 +580,20 @@ async function generateDraft(instruction, audioObj) {
         
         const parsed = safeJsonParse(raw);
 
+        // Επιπλέον προστασία: Αν το content περιέχει σκέψεις (π.χ. * Role:...) τις καθαρίζουμε
+        let finalContent = parsed.content || "";
+        if (finalContent.startsWith("*") || finalContent.startsWith("-")) {
+            // Κόβουμε τα bullets μέχρι να φτάσουμε στο πραγματικό κείμενο
+            const lines = finalContent.split('\n');
+            const cleanLines = lines.filter(line => !line.trim().startsWith("*") && !line.trim().startsWith("-"));
+            finalContent = cleanLines.join('\n').trim();
+        }
+
         if (parsed.intent === 'question') {
-            document.getElementById('answerText').innerText = parsed.content;
+            document.getElementById('answerText').innerText = finalContent;
             navigate('view-answer');
         } else {
-            document.getElementById('draftTextarea').value = parsed.content;
+            document.getElementById('draftTextarea').value = finalContent;
             navigate('view-draft');
         }
         document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία';
