@@ -69,40 +69,40 @@
         <div class="bg-card border border-border rounded-xl p-4 mb-5 shadow-sm relative overflow-hidden group">
             <div class="flex justify-between items-center mb-2">
                 <h2 class="text-xs font-bold uppercase tracking-wider text-mutedForeground flex items-center gap-1">
-                    <i data-lucide="file-text" class="w-3 h-3"></i> �礦��
+                    <i data-lucide="file-text" class="w-3 h-3"></i> Σύνοψη
                 </h2>
                 <span id="emailCategoryBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary text-mutedForeground transition-all duration-300">
-                    ��᢬��...
+                    Ανάλυση...
                 </span>
             </div>
             
             <div id="summaryContent" class="text-sm text-primary leading-relaxed max-h-24 overflow-hidden transition-all duration-300 relative mb-1">
                 <div id="loadingOverlay" class="absolute inset-0 bg-card z-10 flex items-center gap-2">
                     <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-blue-400"></i>
-                    <span id="loadingText" class="text-sm text-mutedForeground">������� �� email...</span>
+                    <span id="loadingText" class="text-sm text-mutedForeground">Διαβάζω το email...</span>
                 </div>
-                <div id="summaryText">�������� ��᢬��...</div>
+                <div id="summaryText">Περιμένω ανάλυση...</div>
                 <div id="summaryFade" class="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent hidden"></div>
             </div>
             
             <div class="flex justify-between items-center mt-2 border-t border-border/50 pt-2">
-                <button id="expandSummaryBtn" class="hidden text-xs text-blue-400 hover:text-blue-300 font-medium">������櫜��...</button>
-                <button id="ttsBtn" onclick="speakSummary()" class="text-xs text-mutedForeground hover:text-blue-400 flex items-center gap-1 ml-auto transition-colors" title="��ᚤਫ਼ ��� ���������">
-                    <i data-lucide="volume-2" class="w-3.5 h-3.5"></i> ���昩�
+                <button id="expandSummaryBtn" class="hidden text-xs text-blue-400 hover:text-blue-300 font-medium">Περισσότερα...</button>
+                <button id="ttsBtn" onclick="speakSummary()" class="text-xs text-mutedForeground hover:text-blue-400 flex items-center gap-1 ml-auto transition-colors" title="Ανάγνωση στα ακουστικά">
+                    <i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση
                 </button>
             </div>
             <button id="manualSummaryBtn" class="hidden w-full mt-2 bg-secondary text-primary py-2 rounded-md text-xs font-medium hover:bg-border transition-colors">
-                <i data-lucide="sparkles" class="w-3 h-3 inline mr-1"></i> ���������� �礦���
+                <i data-lucide="sparkles" class="w-3 h-3 inline mr-1"></i> Δημιουργία Σύνοψης
             </button>
         </div>
 
         <div class="mb-5">
-            <h2 class="text-xs font-bold uppercase tracking-wider text-mutedForeground mb-2">꣜��� ��⨚����</h2>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-mutedForeground mb-2">Άμεσες Ενέργειες</h2>
             <div class="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
-                <button onclick="handleQuickAction('��ᯜ ��� ��ᤫ��� 槦� �� ����������� �����')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">?? ���������</button>
-                <button onclick="handleQuickAction('��ᯜ ��� ��ᤫ��� 櫠 ������棘���')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">? �������</button>
-                <button onclick="handleQuickAction('��ᯜ ��� �������� �������� ��ᤫ��� ��樨����')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">? ��樨���</button>
-                <button onclick="handleQuickAction('��ᯜ 櫠 �� �� ������磜 ��� �� ����⢟����')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">? �� ����⢟�</button>
+                <button onclick="handleQuickAction('Γράψε μια απάντηση όπου θα ευχαριστείς θερμά')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">👍 Ευχαριστώ</button>
+                <button onclick="handleQuickAction('Γράψε μια απάντηση ότι αποδεχόμαστε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">✅ Αποδοχή</button>
+                <button onclick="handleQuickAction('Γράψε μια ευγενική αρνητική απάντηση απόρριψης')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">❌ Απόρριψη</button>
+                <button onclick="handleQuickAction('Γράψε ότι θα το σκεφτούμε και θα επανέλθουμε')" class="flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors flex items-center gap-1">⏳ Θα επανέλθω</button>
             </div>
             <div id="dynamicActionsContainer" class="flex overflow-x-auto gap-2 pb-2 scrollbar-hide mt-2 hidden"></div>
         </div>
@@ -112,11 +112,11 @@
                 <i data-lucide="mic" class="w-8 h-8 opacity-70"></i>
             </button>
             <canvas id="waveformCanvas" width="200" height="40" class="mt-2 rounded-lg hidden"></canvas>
-            <span id="voiceStatus" class="text-xs text-mutedForeground mt-4 text-center">�ᤫ� ���� ��� ������</span>
+            <span id="voiceStatus" class="text-xs text-mutedForeground mt-4 text-center">Κάντε κλικ για ομιλία</span>
         </div>
 
         <div class="mt-auto relative">
-            <input type="text" id="textPrompt" placeholder="� ��ᯫ� ��� ������ / ��髞��..." class="w-full bg-card border border-border text-sm rounded-full py-3 pl-4 pr-12 focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-mutedForeground">
+            <input type="text" id="textPrompt" placeholder="Ή γράψτε μια οδηγία / ερώτηση..." class="w-full bg-card border border-border text-sm rounded-full py-3 pl-4 pr-12 focus:outline-none focus:ring-1 focus:ring-blue-500 placeholder-mutedForeground">
             <button id="sendTextBtn" class="absolute right-1 top-1 bottom-1 w-10 bg-secondary hover:bg-blue-600 hover:text-white rounded-full flex items-center justify-center transition-colors text-mutedForeground">
                 <i data-lucide="arrow-up" class="w-4 h-4"></i>
             </button>
@@ -128,14 +128,14 @@
             <button onclick="navigate('view-main')" class="p-1.5 rounded-md hover:bg-secondary transition-colors text-mutedForeground">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
-            <h1 class="text-sm font-semibold text-primary">��殜��� ��ᤫ����</h1>
+            <h1 class="text-sm font-semibold text-primary">Πρόχειρο Απάντησης</h1>
         </header>
 
         <div class="flex-grow flex flex-col gap-3">
             <textarea id="draftTextarea" class="w-full flex-grow bg-card border border-border rounded-xl p-4 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none min-h-[250px] shadow-sm leading-relaxed"></textarea>
             
             <div class="relative">
-                <input type="text" id="tweakPrompt" placeholder="�������垩� (�.�. �ᤫ� ��� �礫���)" class="w-full bg-card border border-border text-sm rounded-xl py-3 pl-4 pr-12 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <input type="text" id="tweakPrompt" placeholder="Τροποποίηση (π.χ. Κάντο πιο σύντομο)" class="w-full bg-card border border-border text-sm rounded-xl py-3 pl-4 pr-12 focus:outline-none focus:ring-1 focus:ring-blue-500">
                 <button id="tweakBtn" class="absolute right-2 top-2 bottom-2 bg-secondary hover:bg-blue-600 rounded-lg px-2 flex items-center justify-center transition-colors text-primary">
                     <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                 </button>
@@ -143,10 +143,10 @@
 
             <div class="grid grid-cols-2 gap-2 mt-2">
                 <button id="cancelDraftBtn" class="bg-card hover:bg-secondary border border-border text-primary py-2.5 rounded-lg text-sm font-medium transition-colors">
-                    ����ਫ਼
+                    Ακύρωση
                 </button>
                 <button id="insertOutlookBtn" class="bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-md">
-                    <i data-lucide="send" class="w-4 h-4"></i> ����梢���
+                    <i data-lucide="send" class="w-4 h-4"></i> Επικόλληση
                 </button>
             </div>
         </div>
@@ -160,42 +160,42 @@
             <h1 class="text-sm font-semibold text-primary">Email Audit & Analytics</h1>
         </header>
         <div class="space-y-4">
-            <p class="text-xs text-mutedForeground">��᢬�� �樫�� �����嘪 �ᩜ� ��� emails ��� �������ᩫ��� �� AI.</p>
+            <p class="text-xs text-mutedForeground">Ανάλυση φόρτου εργασίας βάσει των emails που επεξεργάστηκε το AI.</p>
             
             <div class="grid grid-cols-2 gap-2">
                 <div class="bg-card border border-border p-3 rounded-xl text-center">
-                    <span class="text-xs text-mutedForeground block">�礦�� ����穜��</span>
+                    <span class="text-xs text-mutedForeground block">Σύνολο Αναλύσεων</span>
                     <span id="auditTotal" class="text-2xl font-bold text-blue-400">0</span>
                 </div>
                 <div class="bg-card border border-border p-3 rounded-xl text-center">
-                    <span class="text-xs text-mutedForeground block">Time Saved (�����.)</span>
-                    <span id="auditSavedTime" class="text-2xl font-bold text-green-400">0�</span>
+                    <span class="text-xs text-mutedForeground block">Time Saved (εκτιμ.)</span>
+                    <span id="auditSavedTime" class="text-2xl font-bold text-green-400">0λ</span>
                 </div>
             </div>
 
             <div class="bg-card border border-border p-4 rounded-xl space-y-3">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-mutedForeground">�������ਫ਼ ��椦� ��� ���������</h3>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-mutedForeground">Κατανάλωση Χρόνου ανά Κατηγορία</h3>
                 
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>?? ����� ��������櫞��</span><span id="pct-high">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>🔥 Υψηλή Προτεραιότητα</span><span id="pct-high">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-high" class="bg-red-500 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>?? ��૜���� / ��������</span><span id="pct-internal">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>💼 Εσωτερικά / Εταιρικά</span><span id="pct-internal">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-internal" class="bg-blue-500 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>?? Newsletters & Alerts</span><span id="pct-news">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>📢 Newsletters & Alerts</span><span id="pct-news">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-news" class="bg-yellow-500 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>??? Spam & ������ �������</span><span id="pct-spam">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>🗑️ Spam & Χαμηλή Σημασία</span><span id="pct-spam">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-spam" class="bg-zinc-600 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
             </div>
 
             <button onclick="clearAuditData()" class="w-full bg-destructive/20 hover:bg-destructive/40 border border-destructive/50 text-destructiveForeground text-xs py-2 rounded-lg transition-colors">
-                ���������� �����������
+                Καθαρισμός Στατιστικών
             </button>
         </div>
     </div>
@@ -205,7 +205,7 @@
             <button onclick="navigate('view-main')" class="p-1.5 rounded-md hover:bg-secondary transition-colors text-mutedForeground">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
-            <h1 class="text-sm font-semibold text-primary">����婜��</h1>
+            <h1 class="text-sm font-semibold text-primary">Ρυθμίσεις</h1>
         </header>
 
         <div class="space-y-5">
@@ -214,41 +214,41 @@
                 <input type="password" id="setApiKey" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
             </div>
             <div class="space-y-1.5">
-                <label class="text-xs font-medium text-mutedForeground">����⢦ AI</label>
+                <label class="text-xs font-medium text-mutedForeground">Μοντέλο AI</label>
                 <select id="setModel" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none">
-                    <option value="gemma-4-31b-it">Gemma 4 31b (��㚦�� & ���������)</option>
-                    <option value="gemini-3.5-flash">Gemini 3.5 Flash (륬���)</option>
-                    <option value="gemini-3.1-pro">Gemini 2.5 Pro (��� 륬���)</option>
-                    <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (��� ��㚦��)</option>
+                    <option value="gemma-4-31b-it">Gemma 4 31b (Γρήγορο & Αποδοτικό)</option>
+                    <option value="gemini-3.5-flash">Gemini 3.5 Flash (Έξυπνο)</option>
+                    <option value="gemini-3.1-pro">Gemini 2.5 Pro (Πιο Έξυπνο)</option>
+                    <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Πιο Γρήγορο)</option>
                 </select>
             </div>
             <div class="space-y-1.5">
-                <label class="text-xs font-medium text-mutedForeground">����������⤦� �椦�</label>
+                <label class="text-xs font-medium text-mutedForeground">Προεπιλεγμένος Τόνος</label>
                 <select id="setTone" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none">
-                    <option value="��������������, ��������� ��� �������.">�������������� (�������)</option>
-                    <option value="�������, ������ ��� ��������������.">������� (������)</option>
-                    <option value="꣜���, �礫���� ��� �����������.">꣜��� (�礫����)</option>
+                    <option value="Επαγγελματικός, ευγενικός και σοβαρός.">Επαγγελματικός (Σοβαρός)</option>
+                    <option value="Φιλικός, θερμός και επαγγελματικός.">Φιλικός (Θερμός)</option>
+                    <option value="Άμεσος, σύντομος και περιεκτικός.">Άμεσος (Σύντομος)</option>
                 </select>
             </div>
             <div class="space-y-1.5">
-                <label class="text-xs font-medium text-mutedForeground">���竞�� ���餞��� (TTS Speed)</label>
+                <label class="text-xs font-medium text-mutedForeground">Ταχύτητα Εκφώνησης (TTS Speed)</label>
                 <select id="setTtsRate" class="w-full bg-card border border-border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none">
-                    <option value="0.8">0.8x (����)</option>
-                    <option value="1.0">1.0x (��������)</option>
-                    <option value="1.25">1.25x (��㚦��)</option>
-                    <option value="1.5">1.5x (���� ��㚦��)</option>
-                    <option value="2.0">2.0x (����᩠�)</option>
+                    <option value="0.8">0.8x (Αργή)</option>
+                    <option value="1.0">1.0x (Κανονική)</option>
+                    <option value="1.25">1.25x (Γρήγορη)</option>
+                    <option value="1.5">1.5x (Πολύ Γρήγορη)</option>
+                    <option value="2.0">2.0x (Διπλάσια)</option>
                 </select>
             </div>
             <div class="flex items-center justify-between bg-card border border-border p-3 rounded-lg">
-                <label class="text-sm font-medium text-primary">���棘�� �礦��</label>
+                <label class="text-sm font-medium text-primary">Αυτόματη Σύνοψη</label>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="setAutoSum" class="sr-only peer">
                     <div class="w-9 h-5 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                 </label>
             </div>
             <div class="flex items-center justify-between bg-card border border-border p-3 rounded-lg">
-                <label class="text-sm font-medium text-primary">���棘�� ���餞�� (Auto-Read)</label>
+                <label class="text-sm font-medium text-primary">Αυτόματη Εκφώνηση (Auto-Read)</label>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="setAutoRead" class="sr-only peer">
                     <div class="w-9 h-5 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
@@ -256,16 +256,16 @@
             </div>
             <div class="space-y-1.5">
                 <label class="text-xs font-medium text-blue-400 flex items-center gap-1">
-                    <i data-lucide="brain" class="w-3.5 h-3.5"></i> ��㣞 ��� Agent (������㩜�� ��㩫�)
+                    <i data-lucide="brain" class="w-3.5 h-3.5"></i> Μνήμη του Agent (Προτιμήσεις Χρήστη)
                 </label>
-                <textarea id="setAgentMemory" placeholder="�.�. ������� �� ������� ���� ����� ���� ��騚�. ��� ���夜�� ���� �������� ���� ��� 16:00. ��������: '�� ���壞��, �塦�'." class="w-full bg-card border border-border rounded-lg p-2.5 text-sm h-20 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+                <textarea id="setAgentMemory" placeholder="π.χ. Προτιμώ να απαντάω στον ενικό στον Γιώργο. Μην κλείνεις ποτέ ραντεβού μετά τις 16:00. Υπογραφή: 'Με εκτίμηση, Νίκος'." class="w-full bg-card border border-border rounded-lg p-2.5 text-sm h-20 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
             </div>
             <div class="space-y-1.5">
-                <label class="text-xs font-medium text-mutedForeground">��機���� ����圪 (Custom Prompt)</label>
-                <textarea id="setCustomPrompt" placeholder="�.�. ��暨��� �ᤫ� �� '� ��ᛘ ��� ������嘪'." class="w-full bg-card border border-border rounded-lg p-2.5 text-sm h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+                <label class="text-xs font-medium text-mutedForeground">Πρόσθετες Οδηγίες (Custom Prompt)</label>
+                <textarea id="setCustomPrompt" placeholder="π.χ. Υπόγραφε πάντα ως 'Η ομάδα της εταιρείας'." class="w-full bg-card border border-border rounded-lg p-2.5 text-sm h-16 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
             </div>
             <button onclick="saveSettings()" class="w-full bg-primary text-primaryForeground py-2.5 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors mt-2">
-                ����㡜��� ����婜��
+                Αποθήκευση Ρυθμίσεων
             </button>
         </div>
     </div>
@@ -275,7 +275,7 @@
             <button onclick="navigate('view-main')" class="p-1.5 rounded-md hover:bg-secondary transition-colors text-mutedForeground">
                 <i data-lucide="arrow-left" class="w-5 h-5"></i>
             </button>
-            <h1 class="text-sm font-semibold text-primary">��ᤫ���</h1>
+            <h1 class="text-sm font-semibold text-primary">Απάντηση</h1>
         </header>
 
         <div class="flex-grow flex flex-col gap-3">
@@ -284,7 +284,7 @@
             </div>
             
             <button onclick="navigate('view-main')" class="mt-4 bg-secondary hover:bg-border border border-border text-primary py-2.5 rounded-lg text-sm font-medium transition-colors">
-                ��� ��髞��
+                Νέα Ερώτηση
             </button>
         </div>
     </div>

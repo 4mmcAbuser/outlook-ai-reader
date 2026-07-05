@@ -11,8 +11,8 @@ lucide.createIcons();
 // -------------------------------------------------------------------------
 let config = {
     apiKey: '',
-    model: 'gemini-2.5-flash', 
-    tone: '��������������, ��������� ��� �������.',
+    model: 'gemini-3.1-flash-lite', 
+    tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
     autoRead: false,
     ttsRate: '1.0',
@@ -46,7 +46,7 @@ Office.onReady((info) => {
         Office.context.mailbox.addHandlerAsync(
             Office.EventType.ItemChanged,
             () => {
-                console.log("?? [System] Item changed - Re-initializing state context.");
+                console.log("🔄 [System] Item changed - Re-initializing state context.");
                 if (window.speechSynthesis) window.speechSynthesis.cancel(); 
                 setTimeout(() => initOutlookData(), 1000); 
             }
@@ -108,14 +108,14 @@ function navigate(viewId) {
 function cleanHtmlToText(html) {
     if (!html) return '';
     return html
-        .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')
-        .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '')
-        .replace(/<br\\s*\\/?>/gi, '\\n')
-        .replace(/<\\/p>/gi, '\\n\\n')
-        .replace(/<\\/div>/gi, '\\n')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
         .replace(/<div[^>]*>/gi, '')
         .replace(/<[^>]+>/g, '')
-        .replace(/\\n{3,}/g, '\\n\\n')
+        .replace(/\n{3,}/g, '\n\n')
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
@@ -146,7 +146,7 @@ function safeJsonParse(rawStr) {
     for (let i = start; i < cleanStr.length; i++) {
         const char = cleanStr[i];
         if (escaping) { escaping = false; continue; }
-        if (char === '\\\\') { escaping = true; continue; }
+        if (char === '\\') { escaping = true; continue; }
         if (char === '"') { inString = !inString; continue; }
         
         if (!inString) {
@@ -161,7 +161,7 @@ function safeJsonParse(rawStr) {
         }
     }
     
-    const jsonMatch = cleanStr.match(/\\{[\\s\\S]*\\}/);
+    const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
         return { summary: cleanStr, content: cleanStr, intent: "draft", smart_buttons: [] };
     }
@@ -173,30 +173,30 @@ function safeJsonParse(rawStr) {
 // ----------------------
 function speakSummary() {
     if (!window.speechSynthesis) {
-        document.getElementById('voiceStatus').innerText = "?? �� �穫��� ��� �������坜� Text-to-Speech.";
+        document.getElementById('voiceStatus').innerText = "⚠️ Το σύστημα δεν υποστηρίζει Text-to-Speech.";
         return;
     }
 
     if (window.speechSynthesis.speaking) {
         window.speechSynthesis.cancel();
-        document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> ���昩�`;
+        document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση`;
         lucide.createIcons();
         return;
     }
 
     const textToRead = document.getElementById('summaryText').innerText;
-    if (textToRead === '�������� ��᢬��...' || textToRead.startsWith('??') || textToRead.startsWith('?') || textToRead.includes('��������')) return;
+    if (textToRead === 'Περιμένω ανάλυση...' || textToRead.startsWith('⚠️') || textToRead.startsWith('⏳') || textToRead.includes('Αδυναμία')) return;
 
     currentSpeechUtterance = new SpeechSynthesisUtterance(textToRead);
     currentSpeechUtterance.lang = 'el-GR'; 
     currentSpeechUtterance.rate = parseFloat(config.ttsRate) || 1.0; 
 
     currentSpeechUtterance.onend = () => {
-        document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> ���昩�`;
+        document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Ακρόαση`;
         lucide.createIcons();
     };
 
-    document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-x" class="w-3.5 h-3.5 text-red-400"></i> �������`;
+    document.getElementById('ttsBtn').innerHTML = `<i data-lucide="volume-x" class="w-3.5 h-3.5 text-red-400"></i> Διακοπή`;
     lucide.createIcons();
     
     window.speechSynthesis.speak(currentSpeechUtterance);
@@ -244,13 +244,13 @@ async function getFullConversationViaREST() {
                     const messages = data.value
                         .filter(m => m.Body && m.Body.Content)
                         .map(m => {
-                            let senderName = m.Sender?.EmailAddress?.Name || "ꚤ੫��";
+                            let senderName = m.Sender?.EmailAddress?.Name || "Άγνωστος";
                             let senderEmail = m.Sender?.EmailAddress?.Address || "";
                             const bodyContent = m.Body.ContentType === 'HTML' ? cleanHtmlToText(m.Body.Content) : m.Body.Content;
                             
                             return {
                                 sender: `${senderName} <${senderEmail}>`,
-                                subject: m.Subject || "(����� �⣘)",
+                                subject: m.Subject || "(Χωρίς Θέμα)",
                                 body: bodyContent,
                                 received: m.DateTimeReceived
                             };
@@ -272,7 +272,7 @@ function initOutlookData() {
     emailContext.text = '';
     emailContext.fullConversation = [];
 
-    // ���������� ��� Reset ��� Summary Box ���� ��� ������ email
+    // Καθαρισμός και Reset του Summary Box κατά την αλλαγή email
     const summaryContent = document.getElementById('summaryContent');
     const expandSummaryBtn = document.getElementById('expandSummaryBtn');
     const summaryFade = document.getElementById('summaryFade');
@@ -289,19 +289,19 @@ function initOutlookData() {
     }
 
     emailContext.meta = {
-        senderName: item.sender?.displayName || 'ꚤ੫��',
+        senderName: item.sender?.displayName || 'Άγνωστος',
         senderEmail: item.sender?.emailAddress || '',
-        subject: item.subject || '(����� �⣘)',
+        subject: item.subject || '(Χωρίς θέμα)',
         receivedTime: item.dateTimeCreated ? new Date(item.dateTimeCreated).toLocaleString('el-GR') : ''
     };
 
-    document.getElementById('voiceStatus').innerText = '�ᤫ� ���� ��� ������'; 
-    startLoadingAnim(["?? ������������...", "?? ��᢬�� ���������...", "?? Email Audit..."]);
+    document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία'; 
+    startLoadingAnim(["📡 Συγχρονισμός...", "🔍 Ανάλυση Ιστορικού...", "🤖 Email Audit..."]);
 
     getFullConversationViaREST()
         .then(messages => {
             emailContext.fullConversation = messages;
-            const structured = messages.map((m, idx) => `--- ������ #${idx + 1} ---\\n����������: ${m.sender}\\n����: ${m.subject}\\n�����������:\\n${m.body}\\n`).join("\\n");
+            const structured = messages.map((m, idx) => `--- ΜΗΝΥΜΑ #${idx + 1} ---\nΑΠΟΣΤΟΛΕΑΣ: ${m.sender}\nΘΕΜΑ: ${m.subject}\nΠΕΡΙΕΧΟΜΕΝΟ:\n${m.body}\n`).join("\n");
             emailContext.text = structured;
             finishLoading();
         })
@@ -314,7 +314,7 @@ function fallbackCurrentMail(retryCount = 0) {
     const item = Office.context.mailbox.item;
     if (!item || !item.body) {
         stopLoadingAnim();
-        emailContext.text = "��ᢣ� ��ᚤਫ਼�.";
+        emailContext.text = "Σφάλμα ανάγνωσης.";
         finishLoading();
         return;
     }
@@ -322,14 +322,14 @@ function fallbackCurrentMail(retryCount = 0) {
     item.body.getAsync(Office.CoercionType.Text, (result) => {
         if (result.status === Office.AsyncResultStatus.Succeeded && result.value && result.value.trim().length > 0) {
             stopLoadingAnim();
-            emailContext.text = `--- ������ ������ ---\\n����������: ${emailContext.meta.senderName}\\n����: ${emailContext.meta.subject}\\n\\n${result.value}`;
+            emailContext.text = `--- ΤΡΕΧΟΝ ΜΗΝΥΜΑ ---\nΑΠΟΣΤΟΛΕΑΣ: ${emailContext.meta.senderName}\nΘΕΜΑ: ${emailContext.meta.subject}\n\n${result.value}`;
             finishLoading();
         } else {
             if (retryCount < 3) {
                 setTimeout(() => fallbackCurrentMail(retryCount + 1), 500);
             } else {
                 stopLoadingAnim();
-                emailContext.text = `--- ������ ������ ---\\n����������: ${emailContext.meta.senderName}\\n����: ${emailContext.meta.subject}\\n\\n[��� �����婫��� ��壜�� ��� email]`;
+                emailContext.text = `--- ΤΡΕΧΟΝ ΜΗΝΥΜΑ ---\nΑΠΟΣΤΟΛΕΑΣ: ${emailContext.meta.senderName}\nΘΕΜΑ: ${emailContext.meta.subject}\n\n[Δεν εντοπίστηκε κείμενο στο email]`;
                 finishLoading();
             }
         }
@@ -369,7 +369,7 @@ function finishLoading() {
 // -------------------------------------------------------------------------
 async function generateSummaryAndAudit() {
     if (!config.apiKey) {
-        document.getElementById('summaryText').innerText = '?? �������� �� API Key ���� ����婜��.';
+        document.getElementById('summaryText').innerText = '⚠️ Εκκρεμεί το API Key στις ρυθμίσεις.';
         return;
     }
 
@@ -382,26 +382,26 @@ You are a dry corporate automation API. You must parse the email thread and outp
 
 [CURRENT TIME CONTEXT (CRITICAL FOR CALENDAR TRACKING)]
 - Today is exactly: ${currentTimeContext} (ISO: ${currentIsoContext})
-Use this baseline to accurately compute relative expressions in the text like "�稠�", "��� ��棜�� ��嫞", or implicit months like "stis 20/09" -> year is 2026.
+Use this baseline to accurately compute relative expressions in the text like "αύριο", "την επόμενη Τρίτη", or implicit months like "stis 20/09" -> year is 2026.
 
 [JSON SCHEMA REQUIREMENT]
 {
-  "summary": "��� �������� executive �礦�� (��� 4 �������) ��� ��������, �����⤞ �� ������ 筦� ��� ��ᚤਫ਼ �� ���������. ����⨜�� ����� ⩫���� �� ��������� �㤬�� ��� �� ������� ���ᜠ.",
+  "summary": "Μια κορυφαία executive σύνοψη (έως 4 γραμμές) στα Ελληνικά, γραμμένη σε φυσικό ύφος για ανάγνωση σε ακουστικά. Αναφέρετε ποιος έστειλε το τελευταίο μήνυμα και τι ακριβώς ζητάει.",
   "category": "High Priority",
   "urgency": "High" or "Medium" or "Low",
-  "sentiment": "����������⤦�" or "���⫝̸���" or "������",
-  "detected_meeting_time": "�� ������ ���������⤞ 騘/���������� ��� �������� (�.�. '��嫞 ���� 11:00') ��ᯫ�� ���, ������ ���� ''",
+  "sentiment": "Δυσαρεστημένος" or "Ουδέτερος" or "Θερμός",
+  "detected_meeting_time": "Αν βρεθεί συγκεκριμένη ώρα/ημερομηνία για ραντεβού (π.χ. 'Τρίτη στις 11:00') γράψτην εδώ, αλλιώς κενό ''",
   "calendar_event": {
      "has_meeting": true or false,
-     "label_text": "Label ��� �� UI Button (�.�. '��������ਫ਼ 20/09' � '���ᤫ��� �稠�')",
+     "label_text": "Label για το UI Button (π.χ. 'Επιβεβαίωση 20/09' ή 'Συνάντηση Αύριο')",
      "start_iso": "YYYY-MM-DDTHH:MM:SS format reflecting the extracted time context",
      "end_iso": "YYYY-MM-DDTHH:MM:SS format (default to 1 hour after start if unspecified)",
-     "subject": "Flawless brief Greek appointment title (e.g. '���ᤫ���: [�� ���������] - [�⣘]')",
-     "ai_notes": "뤘 ���⣦���, ������, �����⤦ executive �㤬�� ��� �������� ��� �����坜� ��� ������⨜��� ��� ���ᤫ���� ��� ��� ������圪. ������������ � ��㩞 raw email headers, dates, � unformatted text logs."
+     "subject": "Flawless brief Greek appointment title (e.g. 'Συνάντηση: [Όνομα Αποστολέα] - [Θέμα]')",
+     "ai_notes": "Ένα πανέμορφο, καθαρό, δομημένο executive μήνυμα στα Ελληνικά που συνοψίζει τις λεπτομέρειες της συνάντησης και τις συμφωνίες. ΑΠΑΓΟΡΕΥΕΤΑΙ η χρήση raw email headers, dates, ή unformatted text logs."
   },
   "smart_buttons": [
-     {"label": "��������ਫ਼ 11:00", "reply_instruction": "��ᯜ ��ᤫ��� ��������ਫ਼�: ������棘��� �� �������� ��� ��� ��嫞 ���� 11:00 �������. ��� ��ᯜ�� �����梦�� ��壜��."},
-     {"label": "�㫘 ������ 𨘪", "reply_instruction": "��ᯜ ��ᤫ��� 櫠 � 騘 11:00 ��� ����眠 ��� ��櫜��� �����������."}
+     {"label": "Επιβεβαίωση 11:00", "reply_instruction": "Γράψε απάντηση επιβεβαίωσης: Αποδεχόμαστε το ραντεβού για την Τρίτη στις 11:00 ακριβώς. Μην γράψεις γενικόλογα κείμενα."},
+     {"label": "Ζήτα Αλλαγή Ώρας", "reply_instruction": "Γράψε απάντηση ότι η ώρα 11:00 δεν βολεύει και πρότεινε εναλλακτική."}
   ]
 }
 
@@ -449,8 +449,8 @@ ${emailContext.text.substring(0, 8000)}`;
             }, 300);
         }
 
-        // ?? FIX: Defensive DOM Layout Measurement
-        // �����⧦��� ��� ��壜�� �� ���������� ��� ����ᣜ �� ������ᜠ �� 96px (max-h-24)
+        // 🚀 FIX: Defensive DOM Layout Measurement
+        // Επιτρέπουμε στο κείμενο να σχεδιαστεί και μετράμε αν ξεπερνάει τα 96px (max-h-24)
         setTimeout(() => {
             const summaryContent = document.getElementById('summaryContent');
             const expandSummaryBtn = document.getElementById('expandSummaryBtn');
@@ -460,7 +460,7 @@ ${emailContext.text.substring(0, 8000)}`;
                 summaryContent.classList.add('max-h-24');
                 if (expandSummaryBtn) expandSummaryBtn.classList.remove('hidden');
                 if (summaryFade) summaryFade.classList.remove('hidden');
-                if (expandSummaryBtn) expandSummaryBtn.innerText = '������櫜��...';
+                if (expandSummaryBtn) expandSummaryBtn.innerText = 'Περισσότερα...';
             } else {
                 if (summaryContent) summaryContent.classList.remove('max-h-24');
                 if (expandSummaryBtn) expandSummaryBtn.classList.add('hidden');
@@ -469,9 +469,9 @@ ${emailContext.text.substring(0, 8000)}`;
         }, 50);
 
     } catch (e) {
-        console.error("? Summary Error:", e);
-        document.getElementById('summaryText').innerText = '�������� ���棘��� �樫ਫ਼� �礦���.';
-        document.getElementById('voiceStatus').innerText = `?? ��ᢣ� �礦���: ${e.message}`;
+        console.error("❌ Summary Error:", e);
+        document.getElementById('summaryText').innerText = 'Αδυναμία αυτόματης φόρτωσης σύνοψης.';
+        document.getElementById('voiceStatus').innerText = `⚠️ Σφάλμα Σύνοψης: ${e.message}`;
     }
 }
 
@@ -482,24 +482,24 @@ function renderEnhancedBadges(resObj) {
     
     switch(resObj.category) {
         case 'High Priority':
-            radarText = '?? ����� ��������櫞��';
+            radarText = '🔥 Υψηλή Προτεραιότητα';
             badge.classList.add('bg-red-500/20', 'text-red-400');
             break;
         case 'Internal':
-            radarText = '?? ��૜���� / ��������';
+            radarText = '💼 Εσωτερικό / Εταιρικό';
             badge.classList.add('bg-blue-500/20', 'text-blue-400');
             break;
         case 'Newsletter':
-            radarText = '?? Newsletter';
+            radarText = '📢 Newsletter';
             badge.classList.add('bg-yellow-500/20', 'text-yellow-400');
             break;
         default:
-            radarText = '??? ������ �������';
+            radarText = '🗑️ Χαμηλή Σημασία';
             badge.classList.add('bg-zinc-800', 'text-zinc-400');
     }
 
-    if (resObj.urgency === 'High' && resObj.category !== 'Spam') radarText += ' | ?? �������';
-    if (resObj.sentiment === '����������⤦�') radarText += ' | ?? �����⩡���';
+    if (resObj.urgency === 'High' && resObj.category !== 'Spam') radarText += ' | 🚨 ΕΠΕΙΓΟΝ';
+    if (resObj.sentiment === 'Δυσαρεστημένος') radarText += ' | 😡 Δυσαρέσκεια';
     
     badge.innerText = radarText;
 }
@@ -513,31 +513,31 @@ function renderDynamicSmartButtons(buttonsArray, calendarEventObj) {
 
     const safeButtons = (buttonsArray && buttonsArray.length > 0) ? buttonsArray : [];
 
-    // 1. 륬��� AI �������
+    // 1. Έξυπνα AI Κουμπιά
     safeButtons.forEach(btn => {
         const nativeBtn = document.createElement('button');
         nativeBtn.className = "flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1";
-        nativeBtn.innerText = "? " + btn.label;
+        nativeBtn.innerText = "✨ " + btn.label;
         nativeBtn.onclick = () => handleQuickAction(btn.reply_instruction);
         container.appendChild(nativeBtn);
     });
 
-    // 2. ?? NATIVE OUTLOOK CALENDAR INTEGRATION
+    // 2. 📅 NATIVE OUTLOOK CALENDAR INTEGRATION
     if (calendarEventObj && calendarEventObj.has_meeting === true) {
         const calBtn = document.createElement('button');
         calBtn.className = "flex-shrink-0 bg-green-600/20 hover:bg-green-600/40 border border-green-500/40 text-xs py-1.5 px-3 rounded-full transition-colors text-green-400 font-bold shadow-sm flex items-center gap-1";
-        calBtn.innerHTML = `?? + ������暠� (${calendarEventObj.label_text || '��������'})`;
+        calBtn.innerHTML = `📅 + Ημερολόγιο (${calendarEventObj.label_text || 'Ραντεβού'})`;
         
         calBtn.onclick = () => {
             let startDate = calendarEventObj.start_iso ? new Date(calendarEventObj.start_iso) : new Date();
             let endDate = calendarEventObj.end_iso ? new Date(calendarEventObj.end_iso) : new Date(startDate.getTime() + 60*60*1000);
 
             Office.context.mailbox.displayNewAppointmentForm({
-                subject: calendarEventObj.subject || `���ᤫ���: ${emailContext.meta.subject}`,
+                subject: calendarEventObj.subject || `Συνάντηση: ${emailContext.meta.subject}`,
                 start: startDate,
                 end: endDate,
                 location: calendarEventObj.location || "",
-                body: calendarEventObj.ai_notes || "��������������� ���� AI Assistant.",
+                body: calendarEventObj.ai_notes || "Προγραμματισμός μέσω AI Assistant.",
                 requiredAttendees: [emailContext.meta.senderEmail] 
             });
         };
@@ -566,7 +566,7 @@ function openAuditDashboard() {
     navigate('view-audit');
     const data = JSON.parse(localStorage.getItem('emailAuditStore')) || { total: 0, high: 0, internal: 0, news: 0, spam: 0 };
     document.getElementById('auditTotal').innerText = data.total;
-    document.getElementById('auditSavedTime').innerText = (data.total * 3) + '�';
+    document.getElementById('auditSavedTime').innerText = (data.total * 3) + 'λ';
     const calcPct = (val) => data.total > 0 ? Math.round((val / data.total) * 100) : 0;
     const pHigh = calcPct(data.high), pInternal = calcPct(data.internal), pNews = calcPct(data.news), pSpam = calcPct(data.spam);
     document.getElementById('pct-high').innerText = pHigh + '%';
@@ -584,7 +584,7 @@ function clearAuditData() {
     openAuditDashboard();
 }
 
-// ?? FIX: ������, ����������� Toggle ����� syntax crashes
+// 🚀 FIX: Καθαρό, λειτουργικό Toggle χωρίς syntax crashes
 document.getElementById('expandSummaryBtn')?.addEventListener('click', function() {
     const summaryEl = document.getElementById('summaryContent');
     const fadeEl = document.getElementById('summaryFade');
@@ -593,11 +593,11 @@ document.getElementById('expandSummaryBtn')?.addEventListener('click', function(
     if (summaryEl.classList.contains('max-h-24')) {
         summaryEl.classList.remove('max-h-24');
         if (fadeEl) fadeEl.classList.add('hidden');
-        this.innerText = '���櫜��...';
+        this.innerText = 'Λιγότερα...';
     } else {
         summaryEl.classList.add('max-h-24');
         if (fadeEl) fadeEl.classList.remove('hidden');
-        this.innerText = '������櫜��...';
+        this.innerText = 'Περισσότερα...';
     }
 });
 
@@ -607,12 +607,12 @@ document.getElementById('expandSummaryBtn')?.addEventListener('click', function(
 async function generateDraft(instruction, audioObj) {
     if (!config.apiKey) { navigate('view-settings'); return; }
 
-    if (!emailContext.text || emailContext.text.trim() === "" || emailContext.text.includes("��ᢣ� ��ᚤਫ਼�.")) {
-        document.getElementById('voiceStatus').innerText = "? �� email ����餜� ��棘... �����������㩫�.";
+    if (!emailContext.text || emailContext.text.trim() === "" || emailContext.text.includes("Σφάλμα ανάγνωσης.")) {
+        document.getElementById('voiceStatus').innerText = "⏳ Το email φορτώνει ακόμα... Ξαναπροσπαθήστε.";
         return;
     }
 
-    document.getElementById('voiceStatus').innerText = '?? ��⭫����...';
+    document.getElementById('voiceStatus').innerText = '🤖 Σκέφτομαι...';
 
     const optimizedContext = emailContext.text.length > 7000
         ? emailContext.text.substring(0, 7000)
@@ -629,7 +629,7 @@ You are strictly prohibited from typing conversational preambles, general corpor
 
 [THE ABSOLUTE COMPLIANCE LAW]
 - Your single most important goal is to write a short, highly-specific email body that directly implements the [TARGET COMMAND].
-- CRITICAL: If the [TARGET COMMAND] specifies a time or a clear acceptance (e.g. '��������ਫ਼ 11:00' or '������棘���'), your text MUST clearly write the confirmation of that exact fact. 
+- CRITICAL: If the [TARGET COMMAND] specifies a time or a clear acceptance (e.g. 'Επιβεβαίωση 11:00' or 'Αποδεχόμαστε'), your text MUST clearly write the confirmation of that exact fact. 
 - DO NOT say "I am reviewing your data and will get back to you". The user clicked a definitive confirmation button, so you must write a final definitive response stating the confirmation!
 - Keep it elegant, executive, and exactly 2-4 sentences max. Sign off using the user's name: "${emailContext.myName}".
 
@@ -670,7 +670,7 @@ ${instruction}`;
         const parsed = safeJsonParse(raw);
 
         if (!parsed.content || parsed.content.trim() === "..." || parsed.content.trim().length < 5) {
-            parsed.content = `�����⨘ ���,\\n\\n����������� �� ���ᤫ��� ��� ��� ��� �������������⤞ 騘. �� �壘� ����⩠��� ��������.\\n\\n�� ���壞��,\\n${emailContext.myName}`;
+            parsed.content = `Καλημέρα σας,\n\nΕπιβεβαιώνω τη συνάντησή μας για την προγραμματισμένη ώρα. Θα είμαι διαθέσιμος κανονικά.\n\nΜε εκτίμηση,\n${emailContext.myName}`;
         }
 
         if (parsed.intent === 'question') {
@@ -680,10 +680,10 @@ ${instruction}`;
             document.getElementById('draftTextarea').value = parsed.content;
             navigate('view-draft');
         }
-        document.getElementById('voiceStatus').innerText = '�ᤫ� ���� ��� ������';
+        document.getElementById('voiceStatus').innerText = 'Κάντε κλικ για ομιλία';
     } catch (e) {
-        console.error("?? AI Draft Error:", e);
-        document.getElementById('voiceStatus').innerText = '? ��ᢣ� AI: ' + e.message;
+        console.error("🤖 AI Draft Error:", e);
+        document.getElementById('voiceStatus').innerText = '❌ Σφάλμα AI: ' + e.message;
     }
 }
 
@@ -706,7 +706,7 @@ document.getElementById('tweakBtn').onclick = () => {
     if (!tweak) return;
     const current = document.getElementById('draftTextarea').value;
     document.getElementById('tweakPrompt').value = '';
-    generateDraft(`�������垩� �� ������磜�� draft email �磭घ ��: "${tweak}"\\n\\n����� EMAIL:\\n${current}`, null);
+    generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με: "${tweak}"\n\nΠΑΛΙΟ EMAIL:\n${current}`, null);
 };
 
 // ----------------------
@@ -772,7 +772,7 @@ voiceBtn.onclick = () => {
         Office.devicePermission.requestPermissionsAsync([Office.DevicePermissionType.microphone], (asyncResult) => {
             if (asyncResult.status === Office.AsyncResultStatus.Failed) {
                 console.error("Microphone permission denied: " + asyncResult.error.message);
-                voiceStatus.innerText = "? �������� ��橙���� ��� ������द";
+                voiceStatus.innerText = "❌ Αποτυχία πρόσβασης στο μικρόφωνο";
             } else {
                 console.log("Microphone permission verified.");
                 startRecording();
@@ -836,13 +836,13 @@ function startRecording() {
                 audioContext.close();
             }
 
-            voiceStatus.innerText = '?? �����������...';
+            voiceStatus.innerText = '🔄 Επεξεργασία...';
 
             if (recognitionText.trim().length > 0) {
                 const draftView = document.getElementById('view-draft');
                 if (draftView && draftView.classList.contains('view-active')) {
                     const currentDraft = document.getElementById('draftTextarea').value;
-                    generateDraft(`�������垩� �� ������磜�� draft email �磭घ ��: "${recognitionText}"\\n\\n����� EMAIL:\\n${currentDraft}`, null);
+                    generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με: "${recognitionText}"\n\nΠΑΛΙΟ EMAIL:\n${currentDraft}`, null);
                 } else {
                     generateDraft(recognitionText, null);
                 }
@@ -855,9 +855,9 @@ function startRecording() {
                     const draftView = document.getElementById('view-draft');
                     if (draftView && draftView.classList.contains('view-active')) {
                         const currentDraft = document.getElementById('draftTextarea').value;
-                        generateDraft(`�������垩� �� ������磜�� draft email �磭घ �� ��� ���������⤞ ������. ����� EMAIL:\\n${currentDraft}`, { data: base64, mimeType: 'audio/webm' });
+                        generateDraft(`Τροποποίησε το προηγούμενο draft email σύμφωνα με την ηχογραφημένη εντολή. ΠΑΛΙΟ EMAIL:\n${currentDraft}`, { data: base64, mimeType: 'audio/webm' });
                     } else {
-                        generateDraft('?? �ञ���� ������ ��㩫�', { data: base64, mimeType: 'audio/webm' });
+                        generateDraft('🎤 Φωνητική εντολή χρήστη', { data: base64, mimeType: 'audio/webm' });
                     }
                 };
             }
@@ -869,9 +869,9 @@ function startRecording() {
         voiceBtn.className = "w-24 h-24 rounded-full siri-listening flex items-center justify-center text-primary cursor-pointer border border-border";
         voiceBtn.innerHTML = `<i data-lucide="square" class="w-8 h-8 text-white"></i>`;
         lucide.createIcons();
-        voiceStatus.innerText = '?? �����... ���㩫� �騘';
+        voiceStatus.innerText = '🔴 Ακούω... Μιλήστε τώρα';
     }).catch(() => { 
-        voiceStatus.innerText = '? ��ᢣ� ������餦�'; 
+        voiceStatus.innerText = '❌ Σφάλμα μικροφώνου'; 
     });
 }
 
@@ -891,7 +891,7 @@ function stopRecording() {
     voiceBtn.className = "w-24 h-24 rounded-full siri-idle flex items-center justify-center text-primary cursor-pointer border border-border";
     voiceBtn.innerHTML = `<i data-lucide="mic" class="w-8 h-8 opacity-70"></i>`;
     lucide.createIcons();
-    voiceStatus.innerText = '�ᤫ� ���� ��� ������';
+    voiceStatus.innerText = 'Κάντε κλικ για ομιλία';
 }
 
 function drawWaveform() {
@@ -959,7 +959,7 @@ document.getElementById('insertOutlookBtn').onclick = () => {
             navigate('view-main');
         } else {
             console.error(asyncResult.error);
-            voiceStatus.innerText = "?? �������� ���棘��� ����梢����.";
+            voiceStatus.innerText = "⚠️ Αποτυχία αυτόματης επικόλλησης.";
         }
     });
 };
