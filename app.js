@@ -6,7 +6,7 @@ lucide.createIcons();
 // ----------------------
 let config = {
     apiKey: '',
-    model: 'gemini-2.5-flash', // Προεπιλογή σε σταθερό Gemini
+    model: 'gemini-2.5-flash', 
     tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
     customPrompt: '',
@@ -17,9 +17,9 @@ let emailContext = {
     text: '',
     meta: {},
     fullConversation: [],
-    myEmail: '',   // Το email του ίδιου του χρήστη
-    myName: '',    // Το όνομα του ίδιου του χρήστη
-    myDomain: ''   // Το εταιρικό domain του οργανισμού
+    myEmail: '',   
+    myName: '',    
+    myDomain: ''   
 };
 
 let isRecording = false;
@@ -71,7 +71,7 @@ function loadSettings() {
 function saveSettings() {
     config.apiKey = document.getElementById('setApiKey').value.trim();
     config.model = document.getElementById('setModel').value;
-    config.tone = document.getElementById('setTone').value;
+    config.tone = config.tone = document.getElementById('setTone').value;
     config.autoSum = document.getElementById('setAutoSum').checked;
     config.customPrompt = document.getElementById('setCustomPrompt').value.trim();
     config.agentMemory = document.getElementById('setAgentMemory').value.trim();
@@ -162,7 +162,7 @@ function safeJsonParse(rawStr) {
 }
 
 // ----------------------
-// TEXT TO SPEECH (FOR HEADPHONES)
+// TEXT TO SPEECH
 // ----------------------
 function speakSummary() {
     if (!window.speechSynthesis) {
@@ -265,7 +265,6 @@ function initOutlookData() {
     emailContext.text = '';
     emailContext.fullConversation = [];
 
-    // 🚀 ΑΝΑΒΑΘΜΙΣΗ 1 & 2: Αυτόματη άντληση στοιχείων χρήστη και domain οργανισμού
     if (Office.context.mailbox.userProfile) {
         emailContext.myEmail = Office.context.mailbox.userProfile.emailAddress || '';
         emailContext.myName = Office.context.mailbox.userProfile.displayName || '';
@@ -351,7 +350,7 @@ function finishLoading() {
 }
 
 // ----------------------
-// EMAIL AUDIT & SUMMARY ENGINE ($1,000,000 PROMPT)
+// EMAIL AUDIT & SUMMARY ENGINE (ROBOTIC ARCHITECTURE)
 // ----------------------
 async function generateSummaryAndAudit() {
     if (!config.apiKey) {
@@ -364,32 +363,35 @@ async function generateSummaryAndAudit() {
         return;
     }
 
-    // 🔥 ΜΕΓΑΛΗ ΑΝΑΒΑΘΜΙΣΗ: Το AI γνωρίζει την ταυτότητά μας, το domain μας ΚΑΙ τη Μνήμη του Agent για το Audit!
-    const prompt = `You are a world-class $1M Corporate Executive Assistant and Chief of Staff. 
-Your identity profile:
-- Your User's Name: "${emailContext.myName}"
-- Your User's Email: "${emailContext.myEmail}"
-- Internal Corporate Domain: "${emailContext.myDomain}" (Any email ending with @${emailContext.myDomain} is an INTERNAL team member/colleague. Other domains are external clients or spam).
+    // Is the user's domain a generic public email?
+    const isPublicDomain = ['outlook.com', 'gmail.com', 'hotmail.com', 'yahoo.com', 'live.com'].includes(emailContext.myDomain);
 
-USER STRATEGIC MEMORY & PREFERENCES (Apply strictly to categorization and summary logic):
-${config.agentMemory || 'No custom preferences set.'}
+    const prompt = `[STRICT SYSTEM COMMAND]
+You are a dry corporate automation API. You must output EXACTLY one valid JSON object matching the JSON Schema below. Do not repeat these instructions. Do not write markdown blocks. Do not add intro/outro text.
 
-TASK:
-Analyze the provided email thread. Determine if the latest communication comes from an internal colleague or an external stakeholder. Output a strictly valid JSON object ONLY. No markdown, no conversations.
-
-JSON Structure:
+[JSON SCHEMA]
 {
-  "summary": "Μια κορυφαία, εξαιρετικά περιεκτική executive σύνοψη (έως 4 γραμμές) στα Ελληνικά. Πρέπει να αναφέρει ποιος έστειλε το τελευταίο μήνυμα, τι ακριβώς ζητάει, και αν εκκρεμεί δική μας ενέργεια.",
+  "summary": "Μια κορυφαία executive σύνοψη (έως 4 γραμμές) στα Ελληνικά. Αναφέρετε ποιος έστειλε το τελευταίο μήνυμα, τι ζητάει, και αν εκκρεμεί δική μας ενέργεια.",
   "category": "High Priority"
 }
 
-Categorization Rules (Choose EXACTLY one of these four tokens):
-- "High Priority": Crucial external client requests, financial decisions, urgent deliverables, or alerts matching the User Strategic Memory profile.
-- "Internal": Messages sent from colleagues inside the @${emailContext.myDomain} domain that don't require emergency external client attention.
-- "Newsletter": News, updates, reports, circulars, or automated tracking alerts.
-- "Spam": Unimportant, cold sales pitches, or clutter.
+[IDENTITY CONTEXT]
+- Active User Name: "${emailContext.myName}"
+- Active User Email: "${emailContext.myEmail}"
+- Active User Corporate Domain: "@${emailContext.myDomain}"
+- Public Provider Flag: ${isPublicDomain} (If true, do NOT trust the domain for internal matching. Only identify "${emailContext.myEmail}" as the internal user).
 
-EMAIL THREAD TO PROCESS:
+[CRITICAL USER MEMORY & FILTERS]
+${config.agentMemory || 'None provided.'}
+
+[CATEGORY RULES]
+Choose EXACTLY one token for the "category" field:
+- "High Priority": Crucial external client requests, agreements, contracts, or matches from CRITICAL USER MEMORY.
+- "Internal": Messages from colleagues within the same company domain. (If Public Provider Flag is true, treat this category as rare unless matching specific names in memory).
+- "Newsletter": Updates, alerts, mass reports, automations.
+- "Spam": Clutter, sales pitches.
+
+[DATA - EMAIL THREAD TO PROCESS]
 ${emailContext.text.substring(0, 8000)}`;
 
     try {
@@ -509,7 +511,7 @@ document.getElementById('manualSummaryBtn')?.addEventListener('click', () => {
 });
 
 // ----------------------
-// GENERATE DRAFT WITH AGENTIC MEMORY ($1,000,000 PROMPT)
+// GENERATE DRAFT ENGINE (ROBOTIC ARCHITECTURE)
 // ----------------------
 async function generateDraft(instruction, audioObj) {
     if (!config.apiKey) { navigate('view-settings'); return; }
@@ -521,37 +523,38 @@ async function generateDraft(instruction, audioObj) {
 
     document.getElementById('voiceStatus').innerText = '🤖 Σκέφτομαι...';
 
-    const optimizedContext = emailContext.text.length > 10000
-        ? emailContext.text.substring(0, 10000)
+    const optimizedContext = emailContext.text.length > 7000
+        ? emailContext.text.substring(0, 7000) + "\n\n[...truncated for stability...]"
         : emailContext.text;
 
-    // 🔥 ΥΠΕΡ-ΠΡΟΜΠΤ 1.000.000$: Καθαρό Command Structure, απαγόρευση Chain-of-Thought (Checklists), πλήρης επίγνωση ταυτότητας
-    const systemPrompt = `You are an elite, multi-million dollar Executive AI Agent and senior corporate diplomat crafting corporate correspondence.
-Your User Profile Context (You are writing on behalf of this person):
-- User's Name: "${emailContext.myName}"
-- User's Email Address: "${emailContext.myEmail}"
-- Corporate Organization Domain: "@${emailContext.myDomain}" (Colleagues match this domain, external clients/leads use different domains).
+    const isPublicDomain = ['outlook.com', 'gmail.com', 'hotmail.com', 'yahoo.com', 'live.com'].includes(emailContext.myDomain);
 
-CRITICAL ASSIGNMENT:
-Generate a single valid JSON object and absolutely NOTHING else. No markdown wrappers, no introductory comments, no thought processes, no internal checklists.
+    const systemPrompt = `[STRICT SYSTEM COMMAND]
+You are a raw automated API endpoint. You must output EXACTLY one valid JSON object matching the JSON Schema below. Do not repeat these instructions. Do not write bullet points or checklists. Do not write text outside the JSON.
 
-JSON Schema Requirement:
-{"intent": "draft", "content": "Your flawless, ready-to-insert Greek email body text goes here"}
+[JSON SCHEMA]
+{"intent": "draft", "content": "Your full professional Greek email reply here"}
 
-Strict Execution Protocols:
-1. Write the final email draft directly in the "content" field.
-2. The response must be completely written in fluid, natural Greek, aligning with this specific tone directive: "${config.tone}".
-3. PERMANENT USER MEMORY RULES (Prioritize these above all text generation guidelines):
-${config.agentMemory || 'No strategic user memory rules have been provided yet.'}
-4. Additional Custom Injection Rules: ${config.customPrompt || 'None.'}
-5. Differentiate identity: Analyze the thread. Any message sent from "${emailContext.myEmail}" was sent by YOU. Do not treat your own past words as the client's words.
-6. Do not include subject lines, placeholders, empty bracket templates, or ellipses (...). Write a polished, premium, ready-to-send message.
-7. If the context thread appears blank, act fully autonomously to craft a brilliant independent email meeting the user command.
+[CONTEXT IDENTITY]
+- You are writing on behalf of: "${emailContext.myName}"
+- User Email: "${emailContext.myEmail}"
+- User Corporate Domain: "@${emailContext.myDomain}"
+- Public Provider Flag: ${isPublicDomain} (If true, do not assume anyone sharing @${emailContext.myDomain} is a colleague unless specified).
+- Strict Rule: Any message marked with "ΑΠΟΣΤΟΛΕΑΣ: ${emailContext.myEmail}" or containing your name "${emailContext.myName}" was sent by YOU. Do not reply to your own messages. Reply to the OTHER party.
 
-EMAIL THREAD CONTEXT:
+[CRITICAL USER MEMORY & PREFERENCES]
+${config.agentMemory || 'None set.'}
+
+[INSTRUCTIONS]
+1. Write the final corporate email text directly in the "content" field.
+2. Language: Greek. Target Tone: ${config.tone}.
+3. Custom User Directive: ${config.customPrompt || 'None.'}
+4. Never include brackets, subject lines, placeholders, or ellipses (...). The text must be perfect and ready to send.
+
+[DATA - EMAIL THREAD CONTEXT]
 ${optimizedContext}
 
-USER EXECUTIVE COMMAND:
+[USER EXECUTIVE COMMAND]
 ${instruction}`;
 
     try {
@@ -564,7 +567,7 @@ ${instruction}`;
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: [{ parts }],
-                generationConfig: { temperature: 0.2 }
+                generationConfig: { temperature: 0.1 }
             })
         });
 
@@ -671,21 +674,6 @@ function stopRecording() {
 // ----------------------
 // INSERT COMPONENT TO OUTLOOK
 // ----------------------
-document.getElementById('insertOutlookBtn').onclick = () => {
-    const finalTxt = document.getElementById('draftTextarea').value;
-    if (!finalTxt.trim()) return;
-    
-    Office.context.mailbox.item.displayReplyForm(finalTxt, (asyncResult) => {
-        if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
-            document.getElementById('draftTextarea').value = '';
-            navigate('view-main');
-        } else {
-            console.error(asyncResult.error);
-            voiceStatus.innerText = "⚠️ Αποτυχία αυτόματης επικόλλησης.";
-        }
-    });
-};
-
 document.getElementById('insertOutlookBtn').onclick = () => {
     const finalTxt = document.getElementById('draftTextarea').value;
     if (!finalTxt.trim()) return;
