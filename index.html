@@ -36,13 +36,20 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
-        .siri-idle { background: radial-gradient(circle at 50% 50%, #27272a, #18181b); box-shadow: 0 0 15px rgba(255,255,255,0.05); transition: all 0.3s ease; }
-        .siri-idle:hover { transform: scale(1.05); box-shadow: 0 0 25px rgba(255,255,255,0.1); }
+        .siri-idle { 
+            background: radial-gradient(circle at 50% 50%, #27272a, #18181b); 
+            box-shadow: 0 0 15px rgba(255,255,255,0.05); 
+            transition: all 0.3s ease; 
+            }
+        .siri-idle:hover { 
+            transform: scale(1.05); 
+            box-shadow: 0 0 25px rgba(255,255,255,0.1); 
+            }
         .siri-listening { 
-            background: linear-gradient(45deg, #ff0080, #7928ca, #00bfff, #00ff80); 
+            background: linear-gradient(45deg, #ffffff, #a1a1aa, #52525b, #27272a); 
             background-size: 400% 400%;
             animation: gradient-shift 3s ease infinite, pulse-glow 1.5s infinite alternate;
-        }
+            }
         @keyframes gradient-shift { 0% {background-position: 0% 50%;} 50% {background-position: 100% 50%;} 100% {background-position: 0% 50%;} }
         @keyframes pulse-glow { 0% { transform: scale(0.95); box-shadow: 0 0 20px rgba(0,191,255,0.4); } 100% { transform: scale(1.1); box-shadow: 0 0 40px rgba(255,0,128,0.7); } }
         .view-section { display: none; opacity: 0; transition: opacity 0.3s ease-in-out; height: 100vh; overflow-y: auto; padding-bottom: 20px;}
@@ -177,19 +184,19 @@
                 <h3 class="text-xs font-bold uppercase tracking-wider text-mutedForeground">Κατανάλωση Χρόνου ανά Κατηγορία</h3>
                 
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>🔥 Υψηλή Προτεραιότητα</span><span id="pct-high">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>Υψηλή Προτεραιότητα</span><span id="pct-high">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-high" class="bg-red-500 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>💼 Εσωτερικά / Εταιρικά</span><span id="pct-internal">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>Εσωτερικά / Εταιρικά</span><span id="pct-internal">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-internal" class="bg-blue-500 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>📢 Newsletters & Alerts</span><span id="pct-news">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>Newsletters & Alerts</span><span id="pct-news">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-news" class="bg-yellow-500 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span>🗑️ Spam & Χαμηλή Σημασία</span><span id="pct-spam">0%</span></div>
+                    <div class="flex justify-between text-xs"><span>Spam & Χαμηλή Σημασία</span><span id="pct-spam">0%</span></div>
                     <div class="w-full bg-secondary h-2 rounded-full overflow-hidden"><div id="bar-spam" class="bg-zinc-600 h-full transition-all duration-500" style="width: 0%"></div></div>
                 </div>
             </div>
