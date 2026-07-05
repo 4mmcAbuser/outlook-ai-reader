@@ -6,7 +6,7 @@ lucide.createIcons();
 // ----------------------
 let config = {
     apiKey: '',
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-2.5-flash', // Προεπιλογή σε σταθερό Gemini
     tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
     customPrompt: '',
@@ -16,7 +16,10 @@ let config = {
 let emailContext = {
     text: '',
     meta: {},
-    fullConversation: []
+    fullConversation: [],
+    myEmail: '',   // Το email του ίδιου του χρήστη
+    myName: '',    // Το όνομα του ίδιου του χρήστη
+    myDomain: ''   // Το εταιρικό domain του οργανισμού
 };
 
 let isRecording = false;
@@ -89,7 +92,7 @@ function navigate(viewId) {
 }
 
 // ----------------------
-// UTILITIES & BULLETPROOF JSON PARSER WITH TEXT FALLBACK
+// UTILITIES & BULLETPROOF JSON PARSER
 // ----------------------
 function cleanHtmlToText(html) {
     if (!html) return '';
@@ -159,7 +162,7 @@ function safeJsonParse(rawStr) {
 }
 
 // ----------------------
-// TEXT TO SPEECH
+// TEXT TO SPEECH (FOR HEADPHONES)
 // ----------------------
 function speakSummary() {
     if (!window.speechSynthesis) {
@@ -262,6 +265,15 @@ function initOutlookData() {
     emailContext.text = '';
     emailContext.fullConversation = [];
 
+    // 🚀 ΑΝΑΒΑΘΜΙΣΗ 1 & 2: Αυτόματη άντληση στοιχείων χρήστη και domain οργανισμού
+    if (Office.context.mailbox.userProfile) {
+        emailContext.myEmail = Office.context.mailbox.userProfile.emailAddress || '';
+        emailContext.myName = Office.context.mailbox.userProfile.displayName || '';
+        if (emailContext.myEmail.includes('@')) {
+            emailContext.myDomain = emailContext.myEmail.split('@')[1].toLowerCase();
+        }
+    }
+
     emailContext.meta = {
         senderName: item.sender?.displayName || 'Άγνωστος',
         senderEmail: item.sender?.emailAddress || '',
@@ -300,7 +312,6 @@ function fallbackCurrentMail(retryCount = 0) {
             finishLoading();
         } else {
             if (retryCount < 3) {
-                console.log(`⏳ Άδειο περιεχόμενο. Επαναδοκιμή φόρτωσης... (${retryCount + 1}/3)`);
                 setTimeout(() => fallbackCurrentMail(retryCount + 1), 500);
             } else {
                 stopLoadingAnim();
@@ -340,7 +351,7 @@ function finishLoading() {
 }
 
 // ----------------------
-// EMAIL AUDIT & SUMMARY ENGINE
+// EMAIL AUDIT & SUMMARY ENGINE ($1,000,000 PROMPT)
 // ----------------------
 async function generateSummaryAndAudit() {
     if (!config.apiKey) {
@@ -353,17 +364,32 @@ async function generateSummaryAndAudit() {
         return;
     }
 
-    const prompt = `Είσαι ένα αυτοματοποιημένο backend API. Η απάντησή σου πρέπει να είναι ΑΠΟΚΛΕΙΣΤΙΚΑ ένα έγκυρο αντικείμενο JSON. Απαγορεύεται ρητά να γράψεις εισαγωγικό κείμενο, markdown, αποσιωπητικά ή επεξηγήσεις.
+    // 🔥 ΜΕΓΑΛΗ ΑΝΑΒΑΘΜΙΣΗ: Το AI γνωρίζει την ταυτότητά μας, το domain μας ΚΑΙ τη Μνήμη του Agent για το Audit!
+    const prompt = `You are a world-class $1M Corporate Executive Assistant and Chief of Staff. 
+Your identity profile:
+- Your User's Name: "${emailContext.myName}"
+- Your User's Email: "${emailContext.myEmail}"
+- Internal Corporate Domain: "${emailContext.myDomain}" (Any email ending with @${emailContext.myDomain} is an INTERNAL team member/colleague. Other domains are external clients or spam).
 
-Ανάλυσε το παρακάτω email thread και συμπλήρωσε τα δεδομένα ακριβώς σε αυτή τη δομή JSON:
+USER STRATEGIC MEMORY & PREFERENCES (Apply strictly to categorization and summary logic):
+${config.agentMemory || 'No custom preferences set.'}
+
+TASK:
+Analyze the provided email thread. Determine if the latest communication comes from an internal colleague or an external stakeholder. Output a strictly valid JSON object ONLY. No markdown, no conversations.
+
+JSON Structure:
 {
-  "summary": "Μια σύντομη executive σύνοψη (έως 4 γραμμές) στα Ελληνικά.",
+  "summary": "Μια κορυφαία, εξαιρετικά περιεκτική executive σύνοψη (έως 4 γραμμές) στα Ελληνικά. Πρέπει να αναφέρει ποιος έστειλε το τελευταίο μήνυμα, τι ακριβώς ζητάει, και αν εκκρεμεί δική μας ενέργεια.",
   "category": "High Priority"
 }
 
-(Για το πεδίο category επίλεξε υποχρεωτικά μία από αυτές τις 4 τιμές: "High Priority", "Internal", "Newsletter", "Spam")
+Categorization Rules (Choose EXACTLY one of these four tokens):
+- "High Priority": Crucial external client requests, financial decisions, urgent deliverables, or alerts matching the User Strategic Memory profile.
+- "Internal": Messages sent from colleagues inside the @${emailContext.myDomain} domain that don't require emergency external client attention.
+- "Newsletter": News, updates, reports, circulars, or automated tracking alerts.
+- "Spam": Unimportant, cold sales pitches, or clutter.
 
-EMAIL THREAD ΓΙΑ ΑΝΑΛΥΣΗ:
+EMAIL THREAD TO PROCESS:
 ${emailContext.text.substring(0, 8000)}`;
 
     try {
@@ -383,12 +409,9 @@ ${emailContext.text.substring(0, 8000)}`;
         }
 
         const data = await res.json();
-        if (data.error) throw new Error(`API Error: ${data.error.message}`);
-
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        let resObj = safeJsonParse(raw);
         
-        if (!resObj.summary) throw new Error("Το JSON δεν περιέχει το πεδίο 'summary'.");
+        let resObj = safeJsonParse(raw);
         
         document.getElementById('summaryText').innerText = resObj.summary;
         updateAuditMetrics(resObj.category || 'Spam');
@@ -400,7 +423,7 @@ ${emailContext.text.substring(0, 8000)}`;
             document.getElementById('expandSummaryBtn')?.classList.remove('hidden');
         }
     } catch (e) {
-        console.error("❌ Summary Generation Error:", e);
+        console.error("❌ Summary Error:", e);
         document.getElementById('summaryText').innerText = 'Αδυναμία αυτόματης φόρτωσης σύνοψης.';
         document.getElementById('voiceStatus').innerText = `⚠️ Σφάλμα Σύνοψης: ${e.message}`;
     }
@@ -486,13 +509,7 @@ document.getElementById('manualSummaryBtn')?.addEventListener('click', () => {
 });
 
 // ----------------------
-// GENERATE DRAFT WITH AGENTIC MEMORY & ANTI-COT STRUCTURING
-// ----------------------
-// ----------------------
-// GENERATE DRAFT WITH AGENTIC MEMORY (SERVER-CRASH PROTECTION)
-// ----------------------
-// ----------------------
-// GENERATE DRAFT WITH AGENTIC MEMORY & ANTI-COT STRUCTURING
+// GENERATE DRAFT WITH AGENTIC MEMORY ($1,000,000 PROMPT)
 // ----------------------
 async function generateDraft(instruction, audioObj) {
     if (!config.apiKey) { navigate('view-settings'); return; }
@@ -504,29 +521,37 @@ async function generateDraft(instruction, audioObj) {
 
     document.getElementById('voiceStatus').innerText = '🤖 Σκέφτομαι...';
 
-    // Περιορισμός context στους 6.000 χαρακτήρες για μέγιστη σταθερότητα και ταχύτητα
-    const optimizedContext = emailContext.text.length > 6000
-        ? emailContext.text.substring(0, 6000) + "\n\n[...το παλαιότερο ιστορικό περικόπηκε για εξοικονόμηση μνήμης...]"
+    const optimizedContext = emailContext.text.length > 10000
+        ? emailContext.text.substring(0, 10000)
         : emailContext.text;
 
-    // Καθαρό, επιτακτικό prompt χωρίς JSON δομές που μπερδεύουν το Gemma
-    const systemPrompt = `You are a strict automated JSON API. You must respond with a single valid JSON object and absolutely NOTHING else. No markdown syntax, no explanations, no brainstorming, no chat, no internal thoughts.
+    // 🔥 ΥΠΕΡ-ΠΡΟΜΠΤ 1.000.000$: Καθαρό Command Structure, απαγόρευση Chain-of-Thought (Checklists), πλήρης επίγνωση ταυτότητας
+    const systemPrompt = `You are an elite, multi-million dollar Executive AI Agent and senior corporate diplomat crafting corporate correspondence.
+Your User Profile Context (You are writing on behalf of this person):
+- User's Name: "${emailContext.myName}"
+- User's Email Address: "${emailContext.myEmail}"
+- Corporate Organization Domain: "@${emailContext.myDomain}" (Colleagues match this domain, external clients/leads use different domains).
 
-Required JSON Structure:
-{"intent": "draft", "content": "Your full professional Greek email reply here"}
+CRITICAL ASSIGNMENT:
+Generate a single valid JSON object and absolutely NOTHING else. No markdown wrappers, no introductory comments, no thought processes, no internal checklists.
 
-Strict Rules:
-1. Generate the actual final email text inside the "content" field.
-2. The email must be written entirely in Greek, matching this tone: ${config.tone}.
-3. Apply these permanent user settings: ${config.agentMemory || 'None'}.
-4. Additional custom instruction: ${config.customPrompt || 'None'}.
-5. Never use ellipses (...), drafts, text-checklists or placeholders. Write a complete, ready-to-send text.
-6. If the email thread is empty or unreadable, act autonomously and write a complete reply email based 100% on the user instruction.
+JSON Schema Requirement:
+{"intent": "draft", "content": "Your flawless, ready-to-insert Greek email body text goes here"}
+
+Strict Execution Protocols:
+1. Write the final email draft directly in the "content" field.
+2. The response must be completely written in fluid, natural Greek, aligning with this specific tone directive: "${config.tone}".
+3. PERMANENT USER MEMORY RULES (Prioritize these above all text generation guidelines):
+${config.agentMemory || 'No strategic user memory rules have been provided yet.'}
+4. Additional Custom Injection Rules: ${config.customPrompt || 'None.'}
+5. Differentiate identity: Analyze the thread. Any message sent from "${emailContext.myEmail}" was sent by YOU. Do not treat your own past words as the client's words.
+6. Do not include subject lines, placeholders, empty bracket templates, or ellipses (...). Write a polished, premium, ready-to-send message.
+7. If the context thread appears blank, act fully autonomously to craft a brilliant independent email meeting the user command.
 
 EMAIL THREAD CONTEXT:
 ${optimizedContext}
 
-USER INSTRUCTION (WHAT TO WRITE):
+USER EXECUTIVE COMMAND:
 ${instruction}`;
 
     try {
@@ -539,9 +564,7 @@ ${instruction}`;
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: [{ parts }],
-                generationConfig: { 
-                    temperature: 0.1 // Σχεδόν μηδενικό temperature για να μην "παραμυθιάζεται" το μοντέλο
-                }
+                generationConfig: { temperature: 0.2 }
             })
         });
 
@@ -553,10 +576,8 @@ ${instruction}`;
         const data = await res.json();
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         
-        // Parsing μέσω του safeJsonParse
         const parsed = safeJsonParse(raw);
 
-        // Ανίχνευση και αναχαίτιση placeholders ή σπασμένων templates
         if (!parsed.content || parsed.content.trim() === "..." || parsed.content.trim().length < 5) {
             console.warn("⚠️ Fallback activated.");
             parsed.content = `Αγαπητέ συνεργάτη,\n\nΣε συνέχεια του μηνύματός σας, θα ήθελα να σας ενημερώσω ότι αποδέχομαι την πρόταση / προσφορά. Θα επανέλθω σύντομα με τις σχετικές λεπτομέρειες.\n\nΜε εκτίμηση`;
@@ -575,6 +596,7 @@ ${instruction}`;
         document.getElementById('voiceStatus').innerText = '❌ Σφάλμα AI: ' + e.message;
     }
 }
+
 // ----------------------
 // CORE INTERACTION EVENT BINDINGS
 // ----------------------
@@ -649,6 +671,21 @@ function stopRecording() {
 // ----------------------
 // INSERT COMPONENT TO OUTLOOK
 // ----------------------
+document.getElementById('insertOutlookBtn').onclick = () => {
+    const finalTxt = document.getElementById('draftTextarea').value;
+    if (!finalTxt.trim()) return;
+    
+    Office.context.mailbox.item.displayReplyForm(finalTxt, (asyncResult) => {
+        if (asyncResult.status === Office.AsyncResultStatus.Succeeded) {
+            document.getElementById('draftTextarea').value = '';
+            navigate('view-main');
+        } else {
+            console.error(asyncResult.error);
+            voiceStatus.innerText = "⚠️ Αποτυχία αυτόματης επικόλλησης.";
+        }
+    });
+};
+
 document.getElementById('insertOutlookBtn').onclick = () => {
     const finalTxt = document.getElementById('draftTextarea').value;
     if (!finalTxt.trim()) return;
