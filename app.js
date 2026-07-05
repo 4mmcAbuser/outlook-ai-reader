@@ -304,7 +304,6 @@ ${emailContext.text.substring(0, 8000)}`;
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { 
-                    responseMimeType: "application/json", 
                     temperature: 0.2 
                 }
             })
