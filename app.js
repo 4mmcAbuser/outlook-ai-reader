@@ -1,5 +1,5 @@
 /**
- * AI Executive Assistant - Outlook Add-on Engine
+ * AI Executive Assistant - Outlook Add-on Engine 
  * Performance Profile: Gemini 3.1 Flash-Lite / 2.5 Flash Optimized
  * Design: Dual-Row Contextual Buttons & Native Outlook Calendar Integration
  */
