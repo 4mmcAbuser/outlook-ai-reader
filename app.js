@@ -1,5 +1,5 @@
 /**
- * AI Executive Assistant - Outlook Add-on Engine 
+ * AI Executive Assistant - Outlook Add-on Engine
  * Performance Profile: Gemini 3.1 Flash-Lite / 2.5 Flash Optimized
  * Design: Dual-Row Contextual Buttons & Native Outlook Calendar Integration
  */
@@ -129,7 +129,8 @@ function safeJsonParse(rawStr) {
             content: cleanStr, 
             intent: "draft",
             category: "High Priority",
-            smart_buttons: []
+            smart_buttons: [],
+            calendar_event: { has_meeting: false }
         };
     }
     
@@ -157,7 +158,7 @@ function safeJsonParse(rawStr) {
     
     const jsonMatch = cleanStr.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-        return { summary: cleanStr, content: cleanStr, intent: "draft", smart_buttons: [] };
+        return { summary: cleanStr, content: cleanStr, intent: "draft", smart_buttons: [], calendar_event: { has_meeting: false } };
     }
     return JSON.parse(jsonMatch[0]);
 }
@@ -350,7 +351,7 @@ function finishLoading() {
 }
 
 // -------------------------------------------------------------------------
-// 3. EMAIL AUDIT & SUMMARY ENGINE
+// 3. EMAIL AUDIT & SUMMARY ENGINE (UPGRADED WITH TIME CONTEXT & CALENDAR OBJECT)
 // -------------------------------------------------------------------------
 async function generateSummaryAndAudit() {
     if (!config.apiKey) {
@@ -360,8 +361,16 @@ async function generateSummaryAndAudit() {
 
     const isPublicDomain = ['outlook.com', 'gmail.com', 'hotmail.com', 'yahoo.com', 'live.com'].includes(emailContext.myDomain);
 
+    // 🚀 ΑΝΑΒΑΘΜΙΣΗ: Έγχυση του ακριβούς τρέχοντος χρόνου στο AI
+    const currentTimeContext = new Date().toLocaleString('el-GR', { timeZone: 'Europe/Athens' });
+    const currentIsoContext = new Date().toISOString();
+
     const prompt = `[STRICT AUTOMATION SYSTEM COMMAND]
-You are a dry corporate automation API. You must parse the email thread and output EXACTLY one valid JSON object matching the JSON Schema below. No markdown, no commentary.
+You are a dry corporate automation API. You must parse the email thread and output EXACTLY one valid JSON object matching the JSON Schema below. No markdown wrappers, no commentary.
+
+[CURRENT TIME CONTEXT (CRITICAL FOR CALENDAR TRACKING)]
+- Today is exactly: ${currentTimeContext} (ISO: ${currentIsoContext})
+Use this baseline to accurately compute relative expressions in the text like "αύριο", "την επόμενη Τρίτη", or implicit months like "stis 20/09" -> year is 2026.
 
 [JSON SCHEMA REQUIREMENT]
 {
@@ -369,10 +378,17 @@ You are a dry corporate automation API. You must parse the email thread and outp
   "category": "High Priority",
   "urgency": "High" or "Medium" or "Low",
   "sentiment": "Δυσαρεστημένος" or "Ουδέτερος" or "Θερμός",
-  "detected_meeting_time": "Αν βρεθεί συγκεκριμένη ώρα/ημερομηνία για ραντεβού (π.χ. 'Τρίτη στις 11:00') γράψτην εδώ, αλλιώς κενό ''",
+  "calendar_event": {
+     "has_meeting": true or false,
+     "label_text": "Label για το UI Button (π.χ. 'Επιβεβαίωση 20/09' ή 'Συνάντηση Αύριο')",
+     "start_iso": "YYYY-MM-DDTHH:MM:SS format reflecting the extracted time context",
+     "end_iso": "YYYY-MM-DDTHH:MM:SS format (default to 1 hour after start if unspecified)",
+     "subject": "Flawless brief Greek appointment title (e.g. 'Συνάντηση: [Όνομα Αποστολέα] - [Θέμα]')",
+     "ai_notes": "Ένα πανέμορφο, καθαρό, δομημένο executive μήνυμα στα Ελληνικά που συνοψίζει τις λεπτομέρειες της συνάντησης και τις συμφωνίες. ΑΠΑΓΟΡΕΥΕΤΑΙ η χρήση raw email headers, dates, ή unformatted text logs."
+  },
   "smart_buttons": [
-     {"label": "Επιβεβαίωση 11:00", "reply_instruction": "Γράψε απάντηση επιβεβαίωσης: Αποδεχόμαστε το ραντεβού για την Τρίτη στις 11:00 ακριβώς. Μην γράψεις γενικόλογα κείμενα."},
-     {"label": "Ζήτα Αλλαγή Ώρας", "reply_instruction": "Γράψε απάντηση ότι η ώρα 11:00 δεν βολεύει και πρότεινε εναλλακτική."}
+     {"label": "Επιβεβαίωση 20/09", "reply_instruction": "Γράψε απάντηση επιβεβαίωσης: Αποδεχόμαστε το ραντεβού για τις 20/09. Μην γράψεις γενικόλογα κείμενα."},
+     {"label": "Ζήτα Αλλαγή Ώρας", "reply_instruction": "Γράψε απάντηση ότι η προτεινόμενη ημερομηνία δεν βολεύει και πρότεινε εναλλακτική."}
   ]
 }
 
@@ -411,7 +427,9 @@ ${emailContext.text.substring(0, 8000)}`;
         document.getElementById('summaryText').innerHTML = `<p>${resObj.summary}</p>`;
         
         renderEnhancedBadges(resObj);
-        renderDynamicSmartButtons(resObj.smart_buttons, resObj.detected_meeting_time);
+        
+        // 🚀 ΑΝΑΒΑΘΜΙΣΗ: Περνάμε όλο το αντικείμενο calendar_event στη συνάρτηση σχεδίασης κουμπιών
+        renderDynamicSmartButtons(resObj.smart_buttons, resObj.calendar_event);
         updateAuditMetrics(resObj.category || 'Spam');
 
         if (document.getElementById('summaryText').innerText.length > 150) {
@@ -455,7 +473,8 @@ function renderEnhancedBadges(resObj) {
     badge.innerText = radarText;
 }
 
-function renderDynamicSmartButtons(buttonsArray, detectedTime) {
+// 🚀 ΑΝΑΒΑΘΜΙΣΗ: Σχεδιασμός της 2ης σειράς κουμπιών με το έξυπνο, διορθωμένο Calendar Integration
+function renderDynamicSmartButtons(buttonsArray, calendarEventObj) {
     const container = document.getElementById('dynamicActionsContainer');
     if (!container) return;
 
@@ -464,7 +483,7 @@ function renderDynamicSmartButtons(buttonsArray, detectedTime) {
 
     const safeButtons = (buttonsArray && buttonsArray.length > 0) ? buttonsArray : [];
 
-    // 1. Έξυπνα Contextual Buttons
+    // 1. Έξυπνα AI Contextual Buttons
     safeButtons.forEach(btn => {
         const nativeBtn = document.createElement('button');
         nativeBtn.className = "flex-shrink-0 bg-secondary hover:bg-border border border-border text-xs py-1.5 px-3 rounded-full transition-colors text-primary font-medium shadow-sm flex items-center gap-1";
@@ -473,16 +492,26 @@ function renderDynamicSmartButtons(buttonsArray, detectedTime) {
         container.appendChild(nativeBtn);
     });
 
-    // 2. 📅 NATIVE OUTLOOK CALENDAR INTEGRATION (FIXED CORE OBJECT CALL)
-    if (detectedTime && detectedTime.trim() !== '') {
+    // 2. 📅 SMART & FIXED CALENDAR ADDITION ENGINE
+    if (calendarEventObj && calendarEventObj.has_meeting === true) {
         const calBtn = document.createElement('button');
         calBtn.className = "flex-shrink-0 bg-green-600/20 hover:bg-green-600/40 border border-green-500/40 text-xs py-1.5 px-3 rounded-full transition-colors text-green-400 font-bold shadow-sm flex items-center gap-1";
-        calBtn.innerHTML = `📅 + Ημερολόγιο (${detectedTime})`;
+        calBtn.innerHTML = `📅 + Ημερολόγιο (${calendarEventObj.label_text || 'Ραντεβού'})`;
+        
         calBtn.onclick = () => {
-            // 🔥 BUG RESOLVED: displayNewAppointmentForm καλείται απευθείας στο mailbox, όχι στο item!
+            // Defensive Programming: Δημιουργία JS Date αντικειμένων με προστασία από null parameters
+            let startDate = calendarEventObj.start_iso ? new Date(calendarEventObj.start_iso) : new Date();
+            let endDate = calendarEventObj.end_iso ? new Date(calendarEventObj.end_iso) : new Date(startDate.getTime() + 60*60*1000);
+
+            // ✅ FIX: Κλήση απευθείας στο mailbox node (Κατάργηση του καταστροφικού .item boundary)
             Office.context.mailbox.displayNewAppointmentForm({
-                subject: `Συνάντηση: ${emailContext.meta.subject}`,
-                body: `Προγραμματισμός βάσει του email thread.\n\n${emailContext.text.substring(0, 500)}`
+                subject: calendarEventObj.subject || `Συνάντηση: ${emailContext.meta.subject}`,
+                start: startDate,
+                end: endDate,
+                location: calendarEventObj.location || "",
+                body: calendarEventObj.ai_notes || "Προγραμματισμός μέσω AI Assistant.",
+                // 💎 WOW FEATURE: Προσθέτει αυτόματα τον αποστολέα του email στη λίστα καλεσμένων!
+                requiredAttendees: [emailContext.meta.senderEmail] 
             });
         };
         container.appendChild(calBtn);
@@ -547,8 +576,6 @@ async function generateDraft(instruction, audioObj) {
 
     const isPublicDomain = ['outlook.com', 'gmail.com', 'hotmail.com', 'yahoo.com', 'live.com'].includes(emailContext.myDomain);
 
-    // 🔥 HYPER-STRICT PROMPT ENGINEERING RESTRUCTURE:
-    // Καταστρέφει το Instruction Over-Smoothing. Αναγκάζει το AI να εκτελέσει την εντολή χωρίς generic χαιρετούρες.
     const systemPrompt = `[CRITICAL COMPILER DIRECTIVE - EXECUTE IMMEDIATELY]
 You are a raw software API endpoint. You must output EXACTLY one raw valid JSON object. 
 You are strictly prohibited from typing conversational preambles, general corporate holding templates, or multi-paragraph fluff.
@@ -586,7 +613,7 @@ ${instruction}`;
             body: JSON.stringify({
                 contents: [{ parts }],
                 generationConfig: { 
-                    temperature: 0.1 // Κοντά στο μηδέν για να εκτελεί τυφλά και αυστηρά το κουμπί
+                    temperature: 0.15 
                 }
             })
         });
