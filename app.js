@@ -6,7 +6,7 @@ lucide.createIcons();
 // ----------------------
 let config = {
     apiKey: '',
-    model: 'gemini-2.5-flash', 
+    model: 'gemini-3.1-flash-lite', 
     tone: 'Επαγγελματικός, ευγενικός και σοβαρός.',
     autoSum: true,
     customPrompt: '',
